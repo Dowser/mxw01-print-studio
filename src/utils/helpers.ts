@@ -41,5 +41,9 @@ export function crc8(data: Uint8Array): number {
  * Create a promise that resolves after specified milliseconds
  */
 export function delay(msecs: number): Promise<void> {
+  if (msecs <= 0) {
+    return Promise.resolve();
+  }
+
   return new Promise((resolve) => setTimeout(() => resolve(), msecs));
 }

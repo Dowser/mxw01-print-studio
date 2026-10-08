@@ -144,6 +144,46 @@ export function rgbaToGray(
 }
 
 /**
+ * Convert explicit RGBA bytes to grayscale without relying on host endianness.
+ * This is the cross-platform path used by the renderer boundary.
+ */
+export function rgbaBytesToGray(
+  rgba: Uint8Array | Uint8ClampedArray,
+  brightness = 128,
+  alphaAsWhite = true
+): Uint8ClampedArray {
+  if (rgba.length % 4 !== 0) {
+    throw new Error(`RGBA data length must be divisible by 4, got ${rgba.length}`);
+  }
+
+  const mono = new Uint8ClampedArray(rgba.length / 4);
+  for (let i = 0; i < mono.length; i += 1) {
+    const offset = i * 4;
+    let r = rgba[offset];
+    let g = rgba[offset + 1];
+    let b = rgba[offset + 2];
+    const alpha = rgba[offset + 3] / 0xff;
+
+    if (alpha < 1 && alphaAsWhite) {
+      const inverseAlpha = 1 - alpha;
+      r += (0xff - r) * inverseAlpha;
+      g += (0xff - g) * inverseAlpha;
+      b += (0xff - b) * inverseAlpha;
+    } else {
+      r *= alpha;
+      g *= alpha;
+      b *= alpha;
+    }
+
+    let gray = r * 0.2125 + g * 0.7154 + b * 0.0721;
+    gray += (brightness - 0x80) * (1 - gray / 0xff) * (gray / 0xff) * 2;
+    mono[i] = gray;
+  }
+
+  return mono;
+}
+
+/**
  * Convert grayscale to RGBA
  */
 export function grayToRgba(

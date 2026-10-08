@@ -1,0 +1,67 @@
+/*
+ * Font Awesome Free 6.7.2 — https://fontawesome.com
+ * Icons: CC BY 4.0; web font: SIL OFL 1.1; CSS subset: MIT.
+ * See LICENSE.txt in this directory and https://fontawesome.com/license/free.
+ */
+
+@font-face {
+  font-family: "Font Awesome 6 Free";
+  font-style: normal;
+  font-weight: 900;
+  font-display: block;
+  src: url("./fa-solid-900.woff2") format("woff2");
+}
+
+.fa-solid {
+  display: inline-block;
+  font-family: "Font Awesome 6 Free";
+  font-style: normal;
+  font-variant: normal;
+  font-weight: 900;
+  line-height: 1;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+.fa-font::before { content: "\f031"; }
+.fa-minus::before { content: "\f068"; }
+.fa-barcode::before { content: "\f02a"; }
+.fa-qrcode::before { content: "\f029"; }
+.fa-list-check::before { content: "\f0ae"; }
+.fa-wand-magic-sparkles::before { content: "\e2ca"; }
+.fa-border-all::before { content: "\f84c"; }
+.fa-icons::before { content: "\e19f"; }
+.fa-shapes::before { content: "\f61f"; }
+.fa-image::before { content: "\f03e"; }
+.fa-clipboard::before { content: "\f328"; }
+.fa-rotate-left::before { content: "\f2ea"; }
+.fa-rotate-right::before { content: "\f2f9"; }
+.fa-file-export::before { content: "\f56e"; }
+.fa-file-import::before { content: "\f56f"; }
+.fa-tag::before { content: "\f02b"; }
+.fa-ticket::before { content: "\f145"; }
+.fa-receipt::before { content: "\f543"; }
+.fa-calendar-check::before { content: "\f274"; }
+.fa-plus::before { content: "\2b"; }
+.fa-terminal::before { content: "\f120"; }
+.fa-print::before { content: "\f02f"; }
+.fa-link::before { content: "\f0c1"; }
+.fa-trash::before { content: "\f2ed"; }
+.fa-copy::before { content: "\f0c5"; }
+.fa-arrow-up::before { content: "\f062"; }
+.fa-arrow-down::before { content: "\f063"; }
+.fa-star::before { content: "\f005"; }
+.fa-heart::before { content: "\f004"; }
+.fa-check::before { content: "\f00c"; }
+.fa-xmark::before { content: "\f00d"; }
+.fa-camera::before { content: "\f030"; }
+.fa-circle-info::before { content: "\f05a"; }
+.fa-triangle-exclamation::before { content: "\f071"; }
+.fa-bell::before { content: "\f0f3"; }
+.fa-user::before { content: "\f007"; }
+.fa-circle::before { content: "\f111"; }
+
+.fa-fallback {
+  font-family: inherit;
+  font-weight: 700;
+}

@@ -1,0 +1,44 @@
+name: MXW01 checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  typescript:
+    name: TypeScript, tests and web smoke
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc -p tsconfig.app.json --noEmit
+      - run: npx tsc -p tsconfig.node.json --noEmit
+      - run: npm test -- --run
+      - run: npm run test:conformance
+      - name: Start local web server
+        run: |
+          node scripts/local-web-server.mjs > "$RUNNER_TEMP/mxw01-web.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/mxw01-web.pid"
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:4173/api/health > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/mxw01-web.log"
+          exit 1
+      - run: npm run web:smoke
+      - run: npm run web:e2e
+      - if: always()
+        name: Stop local web server
+        run: kill "$(cat "$RUNNER_TEMP/mxw01-web.pid")" 2>/dev/null || true
+
+  swift:
+    name: Swift package parity
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test --scratch-path "$RUNNER_TEMP/mxw01-swift"

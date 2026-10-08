@@ -1,0 +1,25 @@
+{
+  "schema": "mxw01.conformance",
+  "version": 1,
+  "protocolRevision": "mxw01-ble-v1",
+  "vectors": [
+    {
+      "name": "get-status",
+      "command": "a1",
+      "payloadHex": "00",
+      "frameHex": "22 21 a1 00 01 00 00 00 ff"
+    },
+    {
+      "name": "set-intensity",
+      "command": "a2",
+      "payloadHex": "5d",
+      "frameHex": "22 21 a2 00 01 00 5d 94 ff"
+    },
+    {
+      "name": "print-complete",
+      "command": "aa",
+      "payloadHex": "",
+      "frameHex": "22 21 aa 00 00 00 00 ff"
+    }
+  ]
+}

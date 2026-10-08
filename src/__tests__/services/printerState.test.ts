@@ -167,6 +167,15 @@ describe('services/printerState', () => {
         expect(manager.isPrintComplete()).toBe(true);
       });
 
+      it('tracks a completion sequence so stale notifications cannot finish a new job', () => {
+        expect(manager.getPrintCompleteSequence()).toBe(0);
+        manager.processNotification(Command.PrintComplete, new Uint8Array([]));
+        expect(manager.getPrintCompleteSequence()).toBe(1);
+        manager.resetPrintComplete();
+        expect(manager.isPrintComplete()).toBe(false);
+        expect(manager.getPrintCompleteSequence()).toBe(1);
+      });
+
       it('should resolve pending promises', async () => {
         const waitPromise = manager.waitForNotification(Command.GetStatus, 1000);
         const payload = new Uint8Array([1, 2, 3]);
@@ -235,6 +244,28 @@ describe('services/printerState', () => {
         
         // Second notification should not affect resolved promise
         manager.processNotification(Command.GetStatus, new Uint8Array([0xbb]));
+      });
+
+      it('should resolve concurrent waiters for the same command', async () => {
+        const promise1 = manager.waitForNotification(Command.GetStatus, 1000);
+        const promise2 = manager.waitForNotification(Command.GetStatus, 1000);
+        const payload = new Uint8Array([0x42]);
+
+        manager.processNotification(Command.GetStatus, payload);
+
+        await expect(promise1).resolves.toEqual(payload);
+        await expect(promise2).resolves.toEqual(payload);
+      });
+
+      it('can cancel one pending waiter without affecting another command', async () => {
+        const cancelled = manager.waitForNotification(Command.GetStatus, 1000);
+        const active = manager.waitForNotification(Command.SetIntensity, 1000);
+
+        manager.cancelNotification(Command.GetStatus, cancelled);
+        manager.processNotification(Command.SetIntensity, new Uint8Array([0x5d]));
+
+        await expect(active).resolves.toEqual(new Uint8Array([0x5d]));
+        expect(manager.isPrintComplete()).toBe(false);
       });
     });
   });

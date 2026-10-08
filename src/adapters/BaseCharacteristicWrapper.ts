@@ -1,6 +1,6 @@
 // Base characteristic wrapper for Bluetooth adapters
 
-import type { BluetoothCharacteristic } from "../core/types";
+import type { BluetoothCharacteristic, BluetoothNotificationEvent } from "../core/types";
 
 /**
  * Base class for wrapping Bluetooth characteristic implementations
@@ -11,21 +11,21 @@ export abstract class BaseCharacteristicWrapper
 {
   protected dataListeners: Map<Function, Function> = new Map();
 
-  abstract writeValueWithoutResponse(data: BufferSource): Promise<void>;
+  abstract writeValueWithoutResponse(data: Uint8Array): Promise<void>;
   abstract startNotifications(): Promise<void>;
   abstract stopNotifications(): Promise<void>;
 
   /**
    * Add event listener (to be implemented by subclasses)
    */
-  abstract addEventListener(event: string, callback: (event: any) => void): void;
+  abstract addEventListener(event: string, callback: (event: BluetoothNotificationEvent) => void): void;
 
   /**
    * Remove event listener (to be implemented by subclasses)
    */
   abstract removeEventListener(
     event: string,
-    callback: (event: any) => void
+    callback: (event: BluetoothNotificationEvent) => void
   ): void;
 
   /**

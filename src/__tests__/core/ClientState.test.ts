@@ -13,6 +13,7 @@ describe('core/ClientState', () => {
       expect(state.isConnected).toBe(false);
       expect(state.isPrinting).toBe(false);
       expect(state.printerState).toBeNull();
+      expect(state.statusVerified).toBe(false);
       expect(state.statusMessage).toBe('Ready to connect printer');
       expect(state.ditherMethod).toBe('steinberg');
       expect(state.printIntensity).toBe(0x5d);
@@ -98,6 +99,16 @@ describe('core/ClientState', () => {
     });
   });
 
+  describe('statusVerified', () => {
+    it('requires an explicit verified status response', () => {
+      expect(state.statusVerified).toBe(false);
+      state.setStatusVerified(true);
+      expect(state.statusVerified).toBe(true);
+      state.reset();
+      expect(state.statusVerified).toBe(false);
+    });
+  });
+
   describe('ditherMethod', () => {
     it('should get dither method', () => {
       expect(state.ditherMethod).toBe('steinberg');
@@ -141,6 +152,10 @@ describe('core/ClientState', () => {
       );
       
       expect(() => state.setPrintIntensity(1000)).toThrow(
+        'Print intensity must be between 0 and 255'
+      );
+
+      expect(() => state.setPrintIntensity(Number.NaN)).toThrow(
         'Print intensity must be between 0 and 255'
       );
     });

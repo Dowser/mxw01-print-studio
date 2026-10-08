@@ -1,5 +1,7 @@
 // Core types for thermal printer client
 
+import type { PrintJobPhase } from "./print-types";
+
 export interface PrinterState {
   printing: boolean;
   paper_jam: boolean;
@@ -17,14 +19,21 @@ export interface BluetoothDevice {
 export interface BluetoothConnection {
   device: BluetoothDevice;
   disconnect(): Promise<void>;
+  /** Optional adapter-level notification for an unexpected physical disconnect. */
+  onDisconnect?(listener: (error?: Error) => void): () => void;
 }
 
 export interface BluetoothCharacteristic {
-  writeValueWithoutResponse(data: BufferSource): Promise<void>;
+  writeValueWithoutResponse(data: Uint8Array): Promise<void>;
   startNotifications(): Promise<void>;
   stopNotifications(): Promise<void>;
-  addEventListener(event: string, callback: (event: any) => void): void;
-  removeEventListener(event: string, callback: (event: any) => void): void;
+  addEventListener(event: string, callback: (event: BluetoothNotificationEvent) => void): void;
+  removeEventListener(event: string, callback: (event: BluetoothNotificationEvent) => void): void;
+}
+
+/** Platform-neutral notification payload passed from a Bluetooth adapter. */
+export interface BluetoothNotificationEvent {
+  readonly value: Uint8Array;
 }
 
 export interface BluetoothServiceInfo {
@@ -63,7 +72,13 @@ export type PrinterEvent =
   | { type: "connected"; device: BluetoothDevice }
   | { type: "disconnected" }
   | { type: "stateChange"; state: PrinterState }
-  | { type: "printProgress"; progress: number }
+  | {
+      type: "printProgress";
+      progress: number;
+      phase?: PrintJobPhase;
+      sentBytes?: number;
+      totalBytes?: number;
+    }
   | { type: "error"; error: Error };
 
 export type PrinterEventType = PrinterEvent["type"];
@@ -97,6 +112,8 @@ export interface PrinterImageData {
   data: Uint8ClampedArray;
   width: number;
   height: number;
+  /** Optional source stride; omitted means tightly packed RGBA rows. */
+  strideBytes?: number;
 }
 
 /**
@@ -105,3 +122,17 @@ export interface PrinterImageData {
 export interface PrintOptions extends Partial<ImageProcessorOptions> {
   intensity?: number;
 }
+
+export type {
+  AlphaMode,
+  BitOrder,
+  ByteTransport,
+  PrintJobPhase,
+  PrintJobProgress,
+  PrinterCapabilities,
+  PrinterProfile,
+  PixelFormat,
+  RasterPage,
+  RgbaImage,
+  TransportEndpoint,
+} from "./print-types";

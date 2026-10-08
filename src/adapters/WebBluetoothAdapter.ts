@@ -7,18 +7,21 @@ import type {
   BluetoothDevice as PrinterBluetoothDevice,
   BluetoothConnection,
   BluetoothServiceInfo,
+  BluetoothNotificationEvent,
 } from "../core/types";
 
 /**
  * Wrapper for Web Bluetooth API characteristic to match our interface
  */
 class WebBluetoothCharacteristicWrapper extends BaseCharacteristicWrapper {
+  private readonly nativeListeners = new Map<(event: BluetoothNotificationEvent) => void, EventListener>();
+
   constructor(private characteristic: BluetoothRemoteGATTCharacteristic) {
     super();
   }
 
-  async writeValueWithoutResponse(data: BufferSource): Promise<void> {
-    await this.characteristic.writeValueWithoutResponse(data);
+  async writeValueWithoutResponse(data: Uint8Array): Promise<void> {
+    await this.characteristic.writeValueWithoutResponse(data as unknown as BufferSource);
   }
 
   async startNotifications(): Promise<void> {
@@ -29,12 +32,21 @@ class WebBluetoothCharacteristicWrapper extends BaseCharacteristicWrapper {
     await this.characteristic.stopNotifications();
   }
 
-  addEventListener(event: string, callback: (event: any) => void): void {
-    this.characteristic.addEventListener(event, callback);
+  addEventListener(event: string, callback: (event: BluetoothNotificationEvent) => void): void {
+    const nativeListener: EventListener = (nativeEvent) => {
+      const value = (nativeEvent.target as BluetoothRemoteGATTCharacteristic | null)?.value;
+      if (value) callback({ value: new Uint8Array(value.buffer, value.byteOffset, value.byteLength) });
+    };
+    this.nativeListeners.set(callback, nativeListener);
+    this.characteristic.addEventListener(event, nativeListener);
   }
 
-  removeEventListener(event: string, callback: (event: any) => void): void {
-    this.characteristic.removeEventListener(event, callback);
+  removeEventListener(event: string, callback: (event: BluetoothNotificationEvent) => void): void {
+    const nativeListener = this.nativeListeners.get(callback);
+    if (nativeListener) {
+      this.characteristic.removeEventListener(event, nativeListener);
+      this.nativeListeners.delete(callback);
+    }
   }
 }
 
@@ -82,6 +94,7 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
         name: this.device.name,
       };
     } catch (error) {
+      this.device = null;
       throw new Error(
         `Failed to request Bluetooth device: ${(error as Error).message}`
       );
@@ -129,14 +142,27 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
         service.getCharacteristic(BLUETOOTH_UUIDS.DATA),
       ]);
 
+      const nativeDevice = this.device;
+      const disconnectListeners = new Set<(error?: Error) => void>();
+      const nativeDisconnectHandler = () => {
+        disconnectListeners.forEach((listener) => listener(new Error("Bluetooth device disconnected")));
+      };
+      nativeDevice.addEventListener("gattserverdisconnected", nativeDisconnectHandler);
+
       return {
         device,
         disconnect: async () => {
+          nativeDevice.removeEventListener("gattserverdisconnected", nativeDisconnectHandler);
+          disconnectListeners.clear();
           if (this.server?.connected) {
             this.server.disconnect();
           }
           this.device = null;
           this.server = null;
+        },
+        onDisconnect: (listener) => {
+          disconnectListeners.add(listener);
+          return () => disconnectListeners.delete(listener);
         },
         controlCharacteristic: new WebBluetoothCharacteristicWrapper(
           controlChar
@@ -145,6 +171,11 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
         notifyCharacteristic: new WebBluetoothCharacteristicWrapper(notifyChar),
       };
     } catch (error) {
+      if (this.server?.connected) {
+        this.server.disconnect();
+      }
+      this.server = null;
+      this.device = null;
       throw new Error(
         `Failed to connect to device: ${(error as Error).message}`
       );

@@ -11,6 +11,7 @@ export class ClientState {
   private _isConnected = false;
   private _isPrinting = false;
   private _printerState: PrinterState | null = null;
+  private _statusVerified = false;
   private _statusMessage = "Ready to connect printer";
   private _ditherMethod: ImageProcessorOptions["dither"] = "steinberg";
   private _printIntensity = 0x5d;
@@ -26,6 +27,10 @@ export class ClientState {
 
   get printerState(): PrinterState | null {
     return this._printerState;
+  }
+
+  get statusVerified(): boolean {
+    return this._statusVerified;
   }
 
   get statusMessage(): string {
@@ -53,6 +58,10 @@ export class ClientState {
     this._printerState = state;
   }
 
+  setStatusVerified(value: boolean): void {
+    this._statusVerified = value;
+  }
+
   setStatusMessage(message: string): void {
     this._statusMessage = message;
   }
@@ -62,7 +71,7 @@ export class ClientState {
   }
 
   setPrintIntensity(intensity: number): void {
-    if (intensity < 0 || intensity > 255) {
+    if (!Number.isInteger(intensity) || !Number.isFinite(intensity) || intensity < 0 || intensity > 255) {
       throw new Error("Print intensity must be between 0 and 255");
     }
     this._printIntensity = intensity;
@@ -75,6 +84,7 @@ export class ClientState {
     this._isConnected = false;
     this._isPrinting = false;
     this._printerState = null;
+    this._statusVerified = false;
     this._statusMessage = "Ready to connect printer";
   }
 }

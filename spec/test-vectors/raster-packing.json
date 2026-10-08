@@ -1,0 +1,37 @@
+{
+  "schema": "mxw01.conformance",
+  "version": 1,
+  "profile": {
+    "id": "mxw01",
+    "widthDots": 384,
+    "bytesPerRow": 48,
+    "minimumRows": 90,
+    "bitOrder": "lsb-first",
+    "blackIsOne": true
+  },
+  "vectors": [
+    {
+      "name": "first-dot",
+      "contentHeightRows": 1,
+      "rows": [
+        { "blackDots": [0] }
+      ],
+      "firstRowPrefixHex": "01 00 00 00 00 00 00 00"
+    },
+    {
+      "name": "byte-boundaries",
+      "contentHeightRows": 1,
+      "rows": [
+        { "blackDots": [0, 7, 8, 383] }
+      ],
+      "firstRowPrefixHex": "81 01 00 00 00 00 00 00",
+      "lastByteHex": "80"
+    },
+    {
+      "name": "minimum-wire-padding",
+      "contentHeightRows": 1,
+      "wireHeightRows": 90,
+      "dataLength": 4320
+    }
+  ]
+}

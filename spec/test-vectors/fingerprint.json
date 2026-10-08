@@ -1,0 +1,35 @@
+{
+  "algorithm": "fnv1a32-canonical-utf8-json",
+  "description": "Stable non-cryptographic identity for preview/print preflight and future Swift parity.",
+  "vectors": [
+    {
+      "name": "text-A",
+      "document": {
+        "schema": "mxw01.print-document",
+        "version": 1,
+        "page": {
+          "widthDots": 16,
+          "heightDots": 8,
+          "margins": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          }
+        },
+        "nodes": [
+          {
+            "id": "title",
+            "kind": "text",
+            "text": "A",
+            "x": 0,
+            "y": 0,
+            "width": 5,
+            "height": 7
+          }
+        ]
+      },
+      "fingerprint": "fnv1a32-72025961"
+    }
+  ]
+}

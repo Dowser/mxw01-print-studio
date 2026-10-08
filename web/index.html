@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1020" />
+    <title>MXW01 Local Terminal</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/vendor/fontawesome/fontawesome.css" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div class="support-strip">
+        Lokal testterminal · dokument och Bluetooth-data stannar på den här datorn
+      </div>
+
+      <header class="topbar">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true"><span></span><i></i><b></b></div>
+          <div>
+            <h1>MXW01 Local Terminal</h1>
+            <p id="header-subtitle">Förhandsgranska och skriv ut etiketter</p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <div id="connection-pill" class="connection-pill disconnected">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="connection-label">Inte ansluten</span>
+          </div>
+          <button id="connect-button" class="button button-primary" type="button">Anslut skrivare</button>
+          <button id="disconnect-button" class="button button-ghost" type="button" hidden>Koppla från</button>
+        </div>
+      </header>
+
+      <nav class="mode-tabs" aria-label="Arbetslägen">
+        <button class="mode-tab active" data-template="test" type="button" aria-pressed="true"><i class="fa-solid fa-terminal" data-fallback="▦" aria-hidden="true"></i> Testetikett</button>
+        <button class="mode-tab" data-template="price" type="button" aria-pressed="false"><i class="fa-solid fa-tag" data-fallback="◇" aria-hidden="true"></i> Prislapp</button>
+        <button class="mode-tab" data-template="qr" type="button" aria-pressed="false"><i class="fa-solid fa-qrcode" data-fallback="⌗" aria-hidden="true"></i> QR-kod</button>
+        <button class="mode-tab" data-template="receipt" type="button" aria-pressed="false"><i class="fa-solid fa-receipt" data-fallback="▤" aria-hidden="true"></i> Kvitto</button>
+        <button class="mode-tab" data-template="ticket" type="button" aria-pressed="false"><i class="fa-solid fa-ticket" data-fallback="▥" aria-hidden="true"></i> Biljett</button>
+        <button class="mode-tab" data-template="parking" type="button" aria-pressed="false"><i class="fa-solid fa-car" data-fallback="▣" aria-hidden="true"></i> P-bot</button>
+        <button class="mode-tab" data-template="attendance" type="button" aria-pressed="false"><i class="fa-solid fa-calendar-check" data-fallback="☑" aria-hidden="true"></i> Närvaro</button>
+        <button class="mode-tab" data-template="blank" type="button" aria-pressed="false"><i class="fa-solid fa-plus" data-fallback="＋" aria-hidden="true"></i> Tom layout</button>
+        <button class="mode-tab" data-template="custom" type="button" aria-pressed="false"><i class="fa-solid fa-icons" data-fallback="⌘" aria-hidden="true"></i> Egen mall</button>
+      </nav>
+
+      <main class="workspace">
+        <section class="panel preview-panel">
+          <div class="panel-heading preview-heading">
+            <div>
+              <p class="eyebrow">Förhandsvisning</p>
+              <h2>Så här kommer utskriften se ut</h2>
+            </div>
+            <div class="preview-meta">
+              <span id="preview-size">384 × 240 punkter</span>
+              <span id="renderer-version" title="Deterministisk renderer">renderer —</span>
+            </div>
+            <div class="preview-controls" aria-label="Förhandsvisningsstorlek">
+              <button id="fit-preview-button" class="button button-small button-ghost active" type="button" aria-pressed="true">Anpassa</button>
+              <button id="native-preview-button" class="button button-small button-ghost" type="button" aria-pressed="false">1:1</button>
+            </div>
+          </div>
+
+          <div class="paper-stage" role="region" tabindex="0" aria-label="Förhandsvisning och redigeringsyta för etiketten" aria-describedby="preview-description preview-edit-hint">
+            <div class="paper-shadow"></div>
+            <canvas id="preview-canvas" width="384" height="240" aria-label="Utskriftsförhandsvisning" aria-describedby="preview-description preview-edit-hint"></canvas>
+            <div id="preview-overlay" class="preview-overlay" aria-label="Redigeringsyta"></div>
+            <p id="preview-description" class="visually-hidden">Monokrom rasterförhandsvisning av etiketten. Svarta punkter skrivs med värme på valt papper.</p>
+            <div id="preview-empty" class="preview-empty" hidden>Etiketten är tom — lägg till ett objekt</div>
+            <div id="preview-loading" class="preview-loading" hidden>Renderar…</div>
+          </div>
+          <div class="preview-footer">
+            <div id="diagnostic-message" class="diagnostic-message" role="status" aria-live="polite" aria-atomic="true">Redo att rendera</div>
+            <span class="preview-hint">Svart = termiskt tryck · grått = papper</span>
+            <span id="preview-edit-hint" class="preview-edit-hint">Klicka på ett objekt och dra det direkt i etiketten · piltangenter flyttar 1 punkt · Shift + pil 10 punkter</span>
+            <span id="preview-overflow-hint" class="preview-overflow-hint" hidden>Svep för att se hela etiketten</span>
+          </div>
+          <div class="mobile-action-bar" aria-label="Snabbåtgärd">
+            <span id="mobile-action-hint" role="status" aria-live="polite">Steg 2 av 3 · anslut skrivaren</span>
+            <button id="mobile-action-button" class="button button-primary" type="button" aria-describedby="mobile-action-hint">Anslut skrivare</button>
+          </div>
+        </section>
+
+        <aside class="panel right-panel" aria-labelledby="inspector-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Egenskaper</p>
+              <h2 id="inspector-title">Välj ett objekt</h2>
+            </div>
+            <button id="delete-node-button" class="icon-button danger" type="button" title="Ta bort objekt" aria-label="Ta bort objekt" disabled>×</button>
+          </div>
+          <div id="inspector" class="inspector empty-inspector">
+            <p>Välj ett lager till vänster för att ändra innehåll, placering och storlek.</p>
+          </div>
+          <div class="node-actions" aria-label="Objektåtgärder">
+            <button id="duplicate-node-button" class="button button-small button-ghost" type="button" disabled>Duplicera</button>
+            <button id="move-node-up-button" class="button button-small button-ghost" type="button" disabled>Upp</button>
+            <button id="move-node-down-button" class="button button-small button-ghost" type="button" disabled>Ner</button>
+          </div>
+
+          <div class="section-divider"></div>
+          <div class="print-card">
+            <div class="panel-heading compact-heading">
+              <div>
+              <p class="eyebrow">Nästa steg</p>
+              <h3>MXW01</h3>
+              </div>
+              <span class="hardware-badge">58 mm</span>
+            </div>
+            <div class="flow-steps" aria-label="Utskriftsflöde">
+              <span class="flow-step active" data-step="edit" aria-current="step">1 Redigera</span>
+              <span class="flow-arrow" aria-hidden="true">›</span>
+              <span class="flow-step" data-step="connect">2 Anslut</span>
+              <span class="flow-arrow" aria-hidden="true">›</span>
+              <span class="flow-step" data-step="print">3 Skriv ut</span>
+            </div>
+            <label class="field-label" for="intensity-input">Värme / intensitet <output id="intensity-value">93</output></label>
+            <input id="intensity-input" class="range-input" type="range" min="0" max="255" value="93" />
+            <label class="field-label" for="dither-select">Bildbehandling</label>
+            <select id="dither-select" class="select-input">
+              <option value="steinberg" selected>Floyd–Steinberg · gråskala</option>
+              <option value="threshold">Tröskel (skarpt)</option>
+              <option value="bayer">Bayer</option>
+              <option value="atkinson">Atkinson</option>
+              <option value="pattern">Mönster</option>
+            </select>
+            <button id="print-button" class="button button-print" type="button" disabled>
+              <span>↗</span> Skriv ut etikett
+            </button>
+            <button id="cancel-batch-button" class="button button-small button-ghost" type="button" hidden>Avbryt batch</button>
+            <p id="print-status" class="print-status" role="status" aria-live="polite">Anslut skrivaren för att börja.</p>
+          </div>
+
+          <details id="batch-details" class="batch-card">
+            <summary class="json-summary">
+              <span>
+                <span class="eyebrow">Utskriftsjobb</span>
+                <strong>Flera etiketter</strong>
+              </span>
+              <span class="details-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="field-grid">
+              <label class="field"><span class="field-label">Antal</span><input id="batch-count-input" class="text-input" type="number" min="1" max="1000" value="1"></label>
+              <label class="field"><span class="field-label">Paus (sek)</span><input id="batch-interval-input" class="text-input" type="number" min="0" max="60" step="0.5" value="0"></label>
+              <label class="field"><span class="field-label">Startnummer</span><input id="batch-start-input" class="text-input" type="number" value="1"></label>
+              <label class="field"><span class="field-label">Steg</span><input id="batch-step-input" class="text-input" type="number" value="1"></label>
+              <label class="field"><span class="field-label">Nollutfyllnad</span><input id="batch-padding-input" class="text-input" type="number" min="0" max="12" value="0"></label>
+              <label class="field"><span class="field-label">Prefix</span><input id="batch-prefix-input" class="text-input" maxlength="32" placeholder="t.ex. P-" value=""></label>
+              <label class="field"><span class="field-label">Suffix</span><input id="batch-suffix-input" class="text-input" maxlength="32" placeholder="t.ex. -A" value=""></label>
+              <label class="field"><span class="field-label">Sekvensfält</span><input id="batch-variable-input" class="text-input" value="ticketNumber"></label>
+              <label class="field full"><span class="field-label">Batchdata</span><input id="batch-data-input" type="file" accept=".csv,.json,text/csv,application/json" /></label>
+              <label class="field full"><span class="field-label">Vid fel</span><select id="batch-on-error-input" class="select-input"><option value="stop">Stoppa och kräv kontroll</option><option value="retry">Försök igen en gång</option><option value="skip">Hoppa över om inget skickats</option></select></label>
+            </div>
+            <label class="checkbox-field"><input id="batch-confirm-input" type="checkbox"><span>Bekräfta före varje etikett</span></label>
+            <p id="batch-token-help" class="inspector-note">Använd <code>{{ticketNumber}}</code> i en text-, streckkods- eller QR-nod för löpnummer.</p>
+            <p id="batch-status" class="print-status" role="status" aria-live="polite">En etikett</p>
+            <div class="batch-resume-actions">
+              <button id="resume-batch-button" class="button button-small button-ghost" type="button" hidden>Återuppta sparat jobb</button>
+              <button id="discard-batch-button" class="button button-small button-ghost" type="button" hidden>Glöm sparat jobb</button>
+              <button id="reconcile-batch-button" class="button button-small button-ghost" type="button">Kontrollera jobbstatus</button>
+            </div>
+            <p id="batch-resume-status" class="inspector-note" role="status" hidden></p>
+          </details>
+
+          <div class="status-card">
+            <div class="status-card-row"><span>Maskinstatus</span><strong id="bluetooth-state">Ej ansluten</strong></div>
+            <div class="status-card-row"><span>Skrivare</span><strong id="printer-state">—</strong></div>
+            <div class="progress-track" role="progressbar" aria-label="Utskriftsförlopp" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Ingen aktiv utskrift"><span id="progress-bar"></span></div>
+            <div class="status-card-row small"><span id="progress-label">Ingen aktiv utskrift</span><span id="bytes-label">—</span></div>
+          </div>
+        </aside>
+
+        <aside class="panel left-panel" aria-labelledby="content-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Bygg dokument</p>
+              <h2 id="content-heading">Innehåll</h2>
+            </div>
+            <span id="node-count" class="count-badge">0</span>
+          </div>
+
+          <div class="tool-grid" aria-label="Lägg till innehåll">
+            <button class="tool-button" data-add="text" type="button"><span class="tool-icon"><i class="fa-solid fa-font" data-fallback="T" aria-hidden="true"></i></span><span>Text</span></button>
+            <button class="tool-button" data-add="rule" type="button"><span class="tool-icon"><i class="fa-solid fa-minus" data-fallback="―" aria-hidden="true"></i></span><span>Linje</span></button>
+            <button class="tool-button" data-add="barcode" type="button"><span class="tool-icon"><i class="fa-solid fa-barcode" data-fallback="▥" aria-hidden="true"></i></span><span>Streckkod</span></button>
+            <button class="tool-button" data-add="qr" type="button"><span class="tool-icon"><i class="fa-solid fa-qrcode" data-fallback="⌗" aria-hidden="true"></i></span><span>QR-kod</span></button>
+            <button class="tool-button" data-add="checklist" type="button"><span class="tool-icon"><i class="fa-solid fa-list-check" data-fallback="☑" aria-hidden="true"></i></span><span>Checklista</span></button>
+            <button class="tool-button" data-add="fortune" type="button"><span class="tool-icon"><i class="fa-solid fa-wand-magic-sparkles" data-fallback="✦" aria-hidden="true"></i></span><span>Lyckokaka</span></button>
+            <button class="tool-button" data-add="frame" type="button"><span class="tool-icon"><i class="fa-solid fa-border-all" data-fallback="□" aria-hidden="true"></i></span><span>Ram</span></button>
+            <button class="tool-button" data-add="icon" type="button"><span class="tool-icon"><i class="fa-solid fa-shapes" data-fallback="✦" aria-hidden="true"></i></span><span>FontAwesome</span></button>
+            <button class="tool-button tool-button-wide" id="add-image-button" type="button"><span class="tool-icon"><i class="fa-solid fa-image" data-fallback="▧" aria-hidden="true"></i></span><span>Bild från datorn</span></button>
+            <button class="tool-button tool-button-wide" id="paste-image-button" type="button"><span class="tool-icon"><i class="fa-solid fa-clipboard" data-fallback="⎘" aria-hidden="true"></i></span><span>Klistra in bild</span></button>
+            <button class="tool-button tool-button-wide" id="webpage-button" type="button"><span class="tool-icon"><i class="fa-solid fa-globe" data-fallback="◎" aria-hidden="true"></i></span><span>Hämta webbsida</span></button>
+            <input id="image-input" type="file" accept="image/*" hidden />
+          </div>
+
+          <div class="document-actions" aria-label="Dokumentåtgärder">
+            <button id="undo-button" class="button button-small button-ghost" type="button" disabled>↶ Ångra</button>
+            <button id="redo-button" class="button button-small button-ghost" type="button" disabled>↷ Gör om</button>
+            <button id="export-json-button" class="button button-small button-ghost" type="button">Exportera</button>
+            <button id="import-json-button" class="button button-small button-ghost" type="button">Importera</button>
+            <button id="export-template-button" class="button button-small button-ghost" type="button">Exportera mall</button>
+            <button id="import-template-button" class="button button-small button-ghost" type="button">Öppna mall</button>
+            <input id="document-file-input" type="file" accept="application/json,.json" hidden />
+            <input id="template-file-input" type="file" accept="application/json,.json,.mxwtemplate.json" hidden />
+          </div>
+          <p id="draft-status" class="draft-status" role="status">Utkast sparas lokalt i webbläsaren</p>
+
+          <details id="labels-details" class="labels-section">
+            <summary class="json-summary">
+              <span>
+                <span class="eyebrow">Bibliotek</span>
+                <strong>Sparade etiketter</strong>
+              </span>
+              <span class="details-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <form id="save-label-form" class="save-label-form">
+              <label class="field full" for="label-name-input">
+                <span class="field-label">Namn</span>
+                <input id="label-name-input" class="text-input" maxlength="80" placeholder="t.ex. Produktetikett" required />
+              </label>
+              <button class="button button-small button-primary" type="submit">Spara aktuell etikett</button>
+            </form>
+            <div id="saved-label-list" class="saved-label-list" aria-live="polite"></div>
+          </details>
+
+          <details class="page-settings">
+            <summary class="json-summary">
+              <span>
+                <span class="eyebrow">Format</span>
+                <strong>Etikettstorlek</strong>
+              </span>
+              <span class="details-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="field-grid">
+              <label class="field full"><span class="field-label">Mediaprofil</span><select id="media-profile-input" class="select-input"></select></label>
+              <label class="field"><span class="field-label">Höjd (punkter)</span><input id="page-height-input" class="text-input" type="number" min="40" max="4000" value="240" /></label>
+              <label class="field"><span class="field-label">Gap (punkter)</span><input id="media-gap-input" class="text-input" type="number" min="0" max="256" value="0" /></label>
+              <label class="field full"><span class="field-label">Ramtyp</span><select id="frame-style-input" class="select-input"><option value="solid">Hel linje</option><option value="double">Dubbel linje</option><option value="dashed">Streckad</option><option value="dotted">Prickad</option><option value="rounded">Mjukade hörn</option></select></label>
+              <label class="field"><span class="field-label">Ramens inset</span><input id="frame-inset-input" class="text-input" type="number" min="0" max="64" value="0" /></label>
+              <label class="field"><span class="field-label">Ramens tjocklek</span><input id="frame-thickness-input" class="text-input" type="number" min="1" max="16" value="1" /></label>
+            </div>
+            <button id="remove-frame-button" class="button button-small button-ghost" type="button">Ta bort ram</button>
+            <p id="media-note" class="inspector-note">MXW01-profilen är 384 punkter bred. Pappersfärgen visas i förhandsvisningen; skrivaren lägger inte till färgat bläck.</p>
+          </details>
+
+          <div class="section-divider"></div>
+          <div class="panel-heading compact-heading">
+            <div>
+              <p class="eyebrow">Lager</p>
+              <h3>Objekt på etiketten</h3>
+            </div>
+          </div>
+          <div id="node-list" class="node-list" role="listbox" aria-label="Objekt på etiketten" aria-orientation="vertical"></div>
+
+          <details id="json-details" class="json-section">
+            <summary class="json-summary">
+              <span>
+                <span class="eyebrow">Avancerat</span>
+                <strong>Dokumentmodell</strong>
+              </span>
+              <span class="details-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <textarea id="json-editor" spellcheck="false" aria-label="Dokument som JSON"></textarea>
+            <div class="json-actions">
+              <button id="apply-json-button" class="button button-small button-ghost" type="button">Använd JSON</button>
+              <button id="copy-json-button" class="button button-small button-ghost" type="button">Kopiera</button>
+            </div>
+          </details>
+        </aside>
+      </main>
+
+      <footer class="footer-bar">
+        <span>MXW01 Local Terminal</span>
+        <span>Lokalt API · renderer och protokoll delas med Node/Swift-grunden</span>
+      </footer>
+    </div>
+    <div id="toast-region" class="toast-region" aria-live="polite"></div>
+    <dialog id="template-dialog" class="template-dialog" aria-labelledby="template-dialog-title">
+      <form id="template-dialog-form" method="dialog">
+        <h2 id="template-dialog-title">Exportera mall</h2>
+        <p id="template-dialog-description" class="inspector-note">Ge mallen ett namn.</p>
+        <label id="template-name-field" class="field full"><span class="field-label">Mallnamn</span><input id="template-name-input" class="text-input" maxlength="128" required /></label>
+        <div id="template-variable-fields" class="template-variable-fields"></div>
+        <div class="dialog-actions">
+          <button id="template-dialog-cancel" class="button button-small button-ghost" type="button">Avbryt</button>
+          <button class="button button-small button-primary" type="submit">Fortsätt</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="webpage-dialog" class="template-dialog" aria-labelledby="webpage-dialog-title">
+      <form id="webpage-dialog-form" method="dialog">
+        <h2 id="webpage-dialog-title">Hämta webbsida</h2>
+        <p class="inspector-note">Sidan hämtas av den lokala servern och omvandlas till text som kan redigeras före utskrift. Privata nätverksadresser blockeras.</p>
+        <label class="field full"><span class="field-label">Webbadress</span><input id="webpage-url-input" class="text-input" type="url" placeholder="https://example.com" required /></label>
+        <div class="dialog-actions">
+          <button id="webpage-dialog-cancel" class="button button-small button-ghost" type="button">Avbryt</button>
+          <button class="button button-small button-primary" type="submit">Hämta sida</button>
+        </div>
+      </form>
+    </dialog>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

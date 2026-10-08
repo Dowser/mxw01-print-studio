@@ -1,10 +1,12 @@
 // Print job encapsulation for ThermalPrinterClient
 
-import { PRINTER_WIDTH, prepareImageDataBuffer } from "../services/printer";
+import { packMonoRaster } from "../services/raster";
 import { processImageForPrinter } from "../services/imageProcessor";
 import { cropImageData } from "../services/imageTransforms";
 import type { PrinterImageData, PrintOptions } from "./types";
 import type { ImageProcessorOptions } from "../services/imageProcessor";
+import type { PrinterProfile, RasterPage } from "./print-types";
+import { MXW01_PRINTER_PROFILE } from "./printerProfiles";
 
 /**
  * Encapsulates a print job with image processing and preparation
@@ -12,10 +14,16 @@ import type { ImageProcessorOptions } from "../services/imageProcessor";
 export class PrintJob {
   private imageData: PrinterImageData;
   private options: PrintOptions;
+  private profile: PrinterProfile;
 
-  constructor(imageData: PrinterImageData, options: PrintOptions = {}) {
+  constructor(
+    imageData: PrinterImageData,
+    options: PrintOptions = {},
+    profile: PrinterProfile = MXW01_PRINTER_PROFILE
+  ) {
     this.imageData = imageData;
     this.options = options;
+    this.profile = profile;
   }
 
   /**
@@ -26,6 +34,8 @@ export class PrintJob {
   prepare(defaultDither: ImageProcessorOptions["dither"]): {
     imageBuffer: Uint8Array;
     numLines: number;
+    wireLines: number;
+    raster: RasterPage;
   } {
     // Default processing options
     const processingOptions: ImageProcessorOptions = {
@@ -35,30 +45,34 @@ export class PrintJob {
       rotate: this.options.rotate ?? 0,
     };
 
-    // If width <= PRINTER_WIDTH: no modification needed
-    // If width > PRINTER_WIDTH: crop to PRINTER_WIDTH
+    // If width exceeds the selected profile, crop to its printable width.
     let processedImage = this.imageData;
     
-    if (this.imageData.width > PRINTER_WIDTH) {
+    if (this.imageData.width > this.profile.widthDots) {
       processedImage = cropImageData(
         this.imageData,
-        PRINTER_WIDTH,
+        this.profile.widthDots,
         this.imageData.height
-      ) as any;
+      );
     }
 
     // Process image for printing (rotation is applied here on the content)
     const { binaryRows } = processImageForPrinter(
-      processedImage as any,
-      processingOptions
+      processedImage,
+      processingOptions,
+      this.profile.widthDots
     );
 
-    // Prepare print buffer
-    const imageBuffer = prepareImageDataBuffer(binaryRows);
+    // Pack the content and apply profile-specific wire padding. `numLines`
+    // remains the content height for compatibility with the existing MXW01
+    // command; `wireLines` makes the distinction explicit for new drivers.
+    const raster = packMonoRaster(binaryRows, this.profile);
 
     return {
-      imageBuffer,
-      numLines: binaryRows.length,
+      imageBuffer: raster.data,
+      numLines: raster.contentHeightRows,
+      wireLines: raster.wireHeightRows,
+      raster,
     };
   }
 
@@ -68,6 +82,10 @@ export class PrintJob {
    * @returns Print intensity
    */
   getIntensity(defaultIntensity: number): number {
-    return this.options.intensity ?? defaultIntensity;
+    const intensity = this.options.intensity ?? defaultIntensity;
+    if (!Number.isInteger(intensity) || !Number.isFinite(intensity) || intensity < 0 || intensity > 255) {
+      throw new Error("Print intensity must be an integer between 0 and 255");
+    }
+    return intensity;
   }
 }

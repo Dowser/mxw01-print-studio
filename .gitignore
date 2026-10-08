@@ -27,3 +27,6 @@ coverage/
 
 # Misc
 .cache/
+.build/
+.playwright-cli/
+output/

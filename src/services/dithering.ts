@@ -20,7 +20,6 @@ export abstract class DitherAlgorithm {
  * Simple threshold dithering
  */
 export class ThresholdDither extends DitherAlgorithm {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   apply(
     mono: Uint8ClampedArray,
     _width: number,

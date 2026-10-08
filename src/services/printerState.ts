@@ -49,6 +49,13 @@ export function createDefaultState(): PrinterState {
   };
 }
 
+interface PendingNotification {
+  readonly promise: Promise<Uint8Array>;
+  readonly resolve: (payload: Uint8Array) => void;
+  readonly reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 /**
  * Printer state manager
  * Handles state updates and notification processing
@@ -56,8 +63,8 @@ export function createDefaultState(): PrinterState {
 export class PrinterStateManager {
   private state: PrinterState;
   private printComplete: boolean = false;
-  private pendingResolvers: Map<number, (payload: Uint8Array) => void> =
-    new Map();
+  private printCompleteSequence = 0;
+  private pendingResolvers: Map<number, Set<PendingNotification>> = new Map();
 
   constructor() {
     this.state = createDefaultState();
@@ -77,6 +84,10 @@ export class PrinterStateManager {
     return this.printComplete;
   }
 
+  getPrintCompleteSequence(): number {
+    return this.printCompleteSequence;
+  }
+
   /**
    * Reset print complete flag
    */
@@ -93,6 +104,7 @@ export class PrinterStateManager {
     // Check for print complete notification
     if (cmdId === Command.PrintComplete) {
       this.printComplete = true;
+      this.printCompleteSequence += 1;
     }
 
     // Update state from status response
@@ -104,11 +116,25 @@ export class PrinterStateManager {
     }
 
     // Resolve any pending promise for this command
-    const resolver = this.pendingResolvers.get(cmdId);
-    if (resolver) {
-      resolver(payload);
+    const waiters = this.pendingResolvers.get(cmdId);
+    if (waiters) {
       this.pendingResolvers.delete(cmdId);
+      waiters.forEach((waiter) => {
+        clearTimeout(waiter.timer);
+        waiter.resolve(payload);
+      });
     }
+  }
+
+  /** Reject waits when a transport disappears before a response arrives. */
+  rejectPending(error: Error): void {
+    this.pendingResolvers.forEach((waiters) => {
+      waiters.forEach((waiter) => {
+        clearTimeout(waiter.timer);
+        waiter.reject(error);
+      });
+    });
+    this.pendingResolvers.clear();
   }
 
   /**
@@ -118,18 +144,54 @@ export class PrinterStateManager {
    * @returns Promise that resolves with the payload
    */
   waitForNotification(cmdId: number, timeoutMs = 10000): Promise<Uint8Array> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingResolvers.delete(cmdId);
-        reject(
+    let resolvePromise!: (payload: Uint8Array) => void;
+    let rejectPromise!: (error: Error) => void;
+    const promise = new Promise<Uint8Array>((resolve, reject) => {
+      resolvePromise = resolve;
+      rejectPromise = reject;
+    });
+    const waiter: PendingNotification = {
+      promise,
+      resolve: resolvePromise,
+      reject: rejectPromise,
+      timer: setTimeout(() => {
+        const waiters = this.pendingResolvers.get(cmdId);
+        if (waiters) {
+          waiters.delete(waiter);
+          if (waiters.size === 0) {
+            this.pendingResolvers.delete(cmdId);
+          }
+        }
+        rejectPromise(
           new Error(`Timeout waiting for notification 0x${cmdId.toString(16)}`)
         );
-      }, timeoutMs);
+      }, timeoutMs),
+    };
 
-      this.pendingResolvers.set(cmdId, (payload) => {
-        clearTimeout(timer);
-        resolve(payload);
-      });
-    });
+    let waiters = this.pendingResolvers.get(cmdId);
+    if (!waiters) {
+      waiters = new Set<PendingNotification>();
+      this.pendingResolvers.set(cmdId, waiters);
+    }
+    waiters.add(waiter);
+    return promise;
+  }
+
+  /** Remove a waiter whose command write failed before a response could arrive. */
+  cancelNotification(cmdId: number, promise: Promise<Uint8Array>): void {
+    const waiters = this.pendingResolvers.get(cmdId);
+    if (!waiters) {
+      return;
+    }
+    for (const waiter of waiters) {
+      if (waiter.promise === promise) {
+        clearTimeout(waiter.timer);
+        waiters.delete(waiter);
+        break;
+      }
+    }
+    if (waiters.size === 0) {
+      this.pendingResolvers.delete(cmdId);
+    }
   }
 }

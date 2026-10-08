@@ -1,4 +1,4 @@
-const I = [
+const Yt = [
   0,
   7,
   14,
@@ -256,49 +256,112 @@ const I = [
   244,
   243
 ];
-function D(a) {
+function ht(e) {
   let t = 0;
-  for (const e of a)
-    t = I[(t ^ e) & 255];
+  for (const i of e)
+    t = Yt[(t ^ i) & 255];
   return t & 255;
 }
-function v(a) {
-  return new Promise((t) => setTimeout(() => t(), a));
+function j(e) {
+  return e <= 0 ? Promise.resolve() : new Promise((t) => setTimeout(() => t(), e));
 }
-const d = {
+const _ = {
   GetStatus: 161,
   SetIntensity: 162,
   PrintRequest: 169,
   FlushData: 173,
   PrintComplete: 170
-}, g = {
+}, N = {
   HEADER_BYTE_1: 34,
   HEADER_BYTE_2: 33,
   TERMINATOR: 255
 };
-function b(a, t) {
-  const e = t.length, r = new Uint8Array([
-    g.HEADER_BYTE_1,
-    g.HEADER_BYTE_2,
-    a,
+function X(e, t) {
+  const i = t.length, r = new Uint8Array([
+    N.HEADER_BYTE_1,
+    N.HEADER_BYTE_2,
+    e,
     0,
-    e & 255,
-    e >> 8 & 255
-  ]), i = new Uint8Array(r.length + t.length);
-  i.set(r), i.set(t, r.length);
-  const s = D(t), n = new Uint8Array(i.length + 2);
-  return n.set(i), n[n.length - 2] = s, n[n.length - 1] = g.TERMINATOR, n;
+    i & 255,
+    i >> 8 & 255
+  ]), n = new Uint8Array(r.length + t.length);
+  n.set(r), n.set(t, r.length);
+  const s = ht(t), o = new Uint8Array(n.length + 2);
+  return o.set(n), o[o.length - 2] = s, o[o.length - 1] = N.TERMINATOR, o;
 }
-function N(a) {
-  if (a[0] !== g.HEADER_BYTE_1 || a[1] !== g.HEADER_BYTE_2)
+function Ot(e, t = {}) {
+  if (e.length < 6 || e[0] !== N.HEADER_BYTE_1 || e[1] !== N.HEADER_BYTE_2)
     return null;
-  const t = a[2], e = a[4] | a[5] << 8, r = a.slice(6, 6 + e);
-  return { cmdId: t, payload: r };
+  const r = 6 + (e[4] | e[5] << 8);
+  if (e.length < r)
+    return null;
+  const n = e.length >= r + 2, s = n && e[r + 1] === N.TERMINATOR, o = n;
+  if (t.requireTerminator && !s)
+    return null;
+  if (t.requireChecksum) {
+    if (!o || e[r] !== ht(e.slice(6, r)))
+      return null;
+  } else if (n && (!s || e[r] !== ht(e.slice(6, r))))
+    return null;
+  return {
+    cmdId: e[2],
+    payload: e.slice(6, r),
+    crc: o ? e[r] : void 0,
+    hasTerminator: s
+  };
 }
-function M(a) {
-  if (a.length < 7)
+class vt {
+  constructor(t = {
+    requireChecksum: !0,
+    requireTerminator: !0
+  }) {
+    this.options = t;
+  }
+  buffer = new Uint8Array(0);
+  feed(t) {
+    if (t.length === 0)
+      return [];
+    const i = new Uint8Array(this.buffer.length + t.length);
+    i.set(this.buffer), i.set(t, this.buffer.length), this.buffer = i;
+    const r = [];
+    for (; this.buffer.length > 0; ) {
+      const n = this.findHeader();
+      if (n < 0) {
+        this.buffer = this.buffer[this.buffer.length - 1] === N.HEADER_BYTE_1 ? this.buffer.slice(-1) : new Uint8Array(0);
+        break;
+      }
+      if (n > 0 && (this.buffer = this.buffer.slice(n)), this.buffer.length < 6)
+        break;
+      const o = 6 + (this.buffer[4] | this.buffer[5] << 8) + 2;
+      if (this.buffer.length < o)
+        break;
+      const a = this.buffer.slice(0, o), c = Ot(a, this.options);
+      if (!c) {
+        this.buffer = this.buffer.slice(1);
+        continue;
+      }
+      r.push(c), this.buffer = this.buffer.slice(o);
+    }
+    return r;
+  }
+  reset() {
+    this.buffer = new Uint8Array(0);
+  }
+  findHeader() {
+    for (let t = 0; t < this.buffer.length - 1; t += 1)
+      if (this.buffer[t] === N.HEADER_BYTE_1 && this.buffer[t + 1] === N.HEADER_BYTE_2)
+        return t;
+    return -1;
+  }
+}
+function xt(e) {
+  const t = Ot(e);
+  return t ? { cmdId: t.cmdId, payload: t.payload } : null;
+}
+function Wt(e) {
+  if (e.length < 7)
     return null;
-  const t = a[6];
+  const t = e[6];
   return {
     printing: (t & 1) !== 0,
     paper_jam: (t & 2) !== 0,
@@ -308,7 +371,7 @@ function M(a) {
     overheat: (t & 32) !== 0
   };
 }
-function L() {
+function Qt() {
   return {
     printing: !1,
     paper_jam: !1,
@@ -318,12 +381,13 @@ function L() {
     overheat: !1
   };
 }
-class O {
+class Zt {
   state;
   printComplete = !1;
+  printCompleteSequence = 0;
   pendingResolvers = /* @__PURE__ */ new Map();
   constructor() {
-    this.state = L();
+    this.state = Qt();
   }
   /**
    * Get current printer state
@@ -337,6 +401,9 @@ class O {
   isPrintComplete() {
     return this.printComplete;
   }
+  getPrintCompleteSequence() {
+    return this.printCompleteSequence;
+  }
   /**
    * Reset print complete flag
    */
@@ -348,13 +415,23 @@ class O {
    * @param cmdId Command ID from notification
    * @param payload Notification payload
    */
-  processNotification(t, e) {
-    if (t === d.PrintComplete && (this.printComplete = !0), t === d.GetStatus) {
-      const i = M(e);
-      i && (this.state = i);
+  processNotification(t, i) {
+    if (t === _.PrintComplete && (this.printComplete = !0, this.printCompleteSequence += 1), t === _.GetStatus) {
+      const n = Wt(i);
+      n && (this.state = n);
     }
     const r = this.pendingResolvers.get(t);
-    r && (r(e), this.pendingResolvers.delete(t));
+    r && (this.pendingResolvers.delete(t), r.forEach((n) => {
+      clearTimeout(n.timer), n.resolve(i);
+    }));
+  }
+  /** Reject waits when a transport disappears before a response arrives. */
+  rejectPending(t) {
+    this.pendingResolvers.forEach((i) => {
+      i.forEach((r) => {
+        clearTimeout(r.timer), r.reject(t);
+      });
+    }), this.pendingResolvers.clear();
   }
   /**
    * Wait for notification response
@@ -362,26 +439,178 @@ class O {
    * @param timeoutMs Timeout in milliseconds
    * @returns Promise that resolves with the payload
    */
-  waitForNotification(t, e = 1e4) {
-    return new Promise((r, i) => {
-      const s = setTimeout(() => {
-        this.pendingResolvers.delete(t), i(
+  waitForNotification(t, i = 1e4) {
+    let r, n;
+    const s = new Promise((c, h) => {
+      r = c, n = h;
+    }), o = {
+      promise: s,
+      resolve: r,
+      reject: n,
+      timer: setTimeout(() => {
+        const c = this.pendingResolvers.get(t);
+        c && (c.delete(o), c.size === 0 && this.pendingResolvers.delete(t)), n(
           new Error(`Timeout waiting for notification 0x${t.toString(16)}`)
         );
-      }, e);
-      this.pendingResolvers.set(t, (n) => {
-        clearTimeout(s), r(n);
-      });
-    });
+      }, i)
+    };
+    let a = this.pendingResolvers.get(t);
+    return a || (a = /* @__PURE__ */ new Set(), this.pendingResolvers.set(t, a)), a.add(o), s;
+  }
+  /** Remove a waiter whose command write failed before a response could arrive. */
+  cancelNotification(t, i) {
+    const r = this.pendingResolvers.get(t);
+    if (r) {
+      for (const n of r)
+        if (n.promise === i) {
+          clearTimeout(n.timer), r.delete(n);
+          break;
+        }
+      r.size === 0 && this.pendingResolvers.delete(t);
+    }
   }
 }
-const y = 384, m = y / 8, S = 90 * m;
-class W {
-  controlWrite;
-  dataWrite;
+const R = {
+  id: "mxw01",
+  protocolRevision: "mxw01-ble-v1",
+  widthDots: 384,
+  bytesPerRow: 48,
+  minimumRows: 90,
+  bitOrder: "lsb-first",
+  blackIsOne: !0,
+  dataChunkSize: 48,
+  dataChunkDelayMs: 15,
+  mediaWidthMm: 58,
+  capabilities: {
+    status: !0,
+    intensity: !0,
+    raster: !0,
+    cancellation: !1,
+    maxPagesPerJob: 1
+  }
+};
+class D extends Error {
+  code;
+  recoverable;
+  cause;
+  constructor(t, i, r = {}) {
+    super(i), this.name = "PrinterError", this.code = t, this.recoverable = r.recoverable ?? !1, this.cause = r.cause;
+  }
+}
+function Y(e, t = "unknown") {
+  if (e instanceof D)
+    return e;
+  const i = e instanceof Error ? e.message : String(e);
+  return new D(t, i, { cause: e });
+}
+class Jt {
+  constructor(t, i, r = 48) {
+    this.controlWrite = t, this.dataWrite = i, this.maxWriteBytes = r;
+  }
+  maxWriteBytes;
+  disconnectListeners = /* @__PURE__ */ new Set();
+  byteListeners = /* @__PURE__ */ new Set();
+  async open() {
+  }
+  async close() {
+  }
+  async write(t, i) {
+    await (t === "control" ? this.controlWrite : this.dataWrite)(i);
+  }
+  onBytes(t) {
+    return this.byteListeners.add(t), () => this.byteListeners.delete(t);
+  }
+  onDisconnect(t) {
+    return this.disconnectListeners.add(t), () => this.disconnectListeners.delete(t);
+  }
+  /** Useful for adapter bridges and deterministic transport tests. */
+  emitBytes(t) {
+    this.byteListeners.forEach((i) => i(t));
+  }
+  /** Useful for adapter bridges and deterministic transport tests. */
+  emitDisconnect(t) {
+    this.disconnectListeners.forEach((i) => i(t));
+  }
+}
+function dt(e, t = R) {
+  const i = Math.ceil(t.widthDots / 8);
+  if (t.widthDots <= 0 || !Number.isInteger(t.widthDots) || t.bytesPerRow < i || t.minimumRows < 0 || !Number.isInteger(t.bytesPerRow) || !Number.isInteger(t.minimumRows))
+    throw new Error("Printer profile has invalid raster dimensions");
+  const r = e.length, n = Math.max(r, t.minimumRows), s = new Uint8Array(n * t.bytesPerRow);
+  for (let o = 0; o < r; o += 1) {
+    const a = e[o];
+    if (!a || a.length !== t.widthDots)
+      throw new Error(`Raster row ${o} must contain exactly ${t.widthDots} pixels`);
+    const c = o * t.bytesPerRow;
+    for (let h = 0; h < t.widthDots; h += 1) {
+      const l = a[h] === !0 === t.blackIsOne ? 1 : 0, f = Math.floor(h / 8), y = t.bitOrder === "lsb-first" ? h % 8 : 7 - h % 8;
+      s[c + f] |= l << y;
+    }
+  }
+  return {
+    widthDots: t.widthDots,
+    heightDots: r,
+    contentHeightRows: r,
+    wireHeightRows: n,
+    bytesPerRow: t.bytesPerRow,
+    bitOrder: t.bitOrder,
+    blackIsOne: t.blackIsOne,
+    data: s
+  };
+}
+function qi(e, t = !1) {
+  const i = t ? e.wireHeightRows : e.contentHeightRows, r = [];
+  for (let n = 0; n < i; n += 1) {
+    const s = [], o = n * e.bytesPerRow;
+    for (let a = 0; a < e.widthDots; a += 1) {
+      const c = Math.floor(a / 8), h = e.bitOrder === "lsb-first" ? a % 8 : 7 - a % 8, u = e.data[o + c] >> h & 1;
+      s.push(e.blackIsOne ? u === 1 : u === 0);
+    }
+    r.push(s);
+  }
+  return r;
+}
+const Bi = R.widthDots, Fi = R.bytesPerRow, Ui = R.minimumRows * R.bytesPerRow;
+class Kt {
+  transport;
+  profileDefinition;
   stateManager;
-  constructor(t, e) {
-    this.controlWrite = t, this.dataWrite = e, this.stateManager = new O();
+  frameDecoder = new vt();
+  notificationFrameDecoder = new vt();
+  unsubscribeBytes;
+  unsubscribeDisconnect;
+  disposed = !1;
+  statusRequestPromise = null;
+  constructor(t, i, r) {
+    if (this.stateManager = new Zt(), typeof t == "function") {
+      if (typeof i != "function")
+        throw new Error("A data characteristic writer is required");
+      const n = r ?? R;
+      this.transport = new Jt(
+        t,
+        i,
+        n.dataChunkSize
+      ), this.profileDefinition = n, this.unsubscribeBytes = null, this.unsubscribeDisconnect = null;
+    } else
+      this.transport = t, this.profileDefinition = typeof i == "function" || i === void 0 ? r ?? R : i, this.unsubscribeBytes = this.transport.onBytes((n) => {
+        this.frameDecoder.feed(n).forEach((o) => {
+          this.stateManager.processNotification(o.cmdId, o.payload);
+        });
+      }), this.unsubscribeDisconnect = this.transport.onDisconnect((n) => {
+        this.stateManager.rejectPending(
+          n ?? new D("transport", "Printer transport disconnected", {
+            recoverable: !0
+          })
+        );
+      });
+  }
+  get profile() {
+    return this.profileDefinition;
+  }
+  dispose() {
+    this.disposed || (this.disposed = !0, this.unsubscribeBytes?.(), this.unsubscribeDisconnect?.(), this.stateManager.rejectPending(
+      new D("cancelled", "Printer controller disposed")
+    ), this.frameDecoder.reset(), this.notificationFrameDecoder.reset());
   }
   /**
    * Get current printer state
@@ -393,93 +622,140 @@ class W {
    * Process incoming notification from printer
    */
   notify(t) {
-    const e = N(t);
-    if (!e) {
+    const i = xt(t);
+    if (!i) {
       console.warn("Ignoring unexpected notification format");
       return;
     }
-    this.stateManager.processNotification(e.cmdId, e.payload);
+    this.stateManager.processNotification(i.cmdId, i.payload);
+  }
+  /**
+   * Process a complete, checksum-verified notification from a production
+   * Bluetooth adapter. `notify` remains permissive for legacy integrations.
+   */
+  notifyStrict(t) {
+    const i = xt(t);
+    if (i)
+      return this.stateManager.processNotification(
+        i.cmdId,
+        i.payload
+      ), !0;
+    const r = this.notificationFrameDecoder.feed(t);
+    return r.length === 0 && t.length > 0 ? !1 : (r.forEach((n) => {
+      this.stateManager.processNotification(n.cmdId, n.payload);
+    }), r.length > 0);
   }
   /**
    * Set print intensity (darkness)
    */
   async setIntensity(t = 93) {
-    const e = b(d.SetIntensity, Uint8Array.of(t));
-    await this.controlWrite(e), await v(50);
+    if (!Number.isInteger(t) || !Number.isFinite(t) || t < 0 || t > 255)
+      throw new D("protocol", `Print intensity must be an integer between 0 and 255, got ${t}`);
+    const i = X(_.SetIntensity, Uint8Array.of(t));
+    await this.transport.write("control", i), await j(50);
   }
   /**
    * Request current printer status
    */
-  async requestStatus() {
-    const t = b(d.GetStatus, Uint8Array.of(0));
-    return await this.controlWrite(t), this.stateManager.waitForNotification(d.GetStatus, 5e3);
+  async requestStatus(t = 5e3) {
+    if (this.statusRequestPromise)
+      return this.statusRequestPromise;
+    const i = this.requestStatusInternal(t);
+    this.statusRequestPromise = i;
+    try {
+      return await i;
+    } finally {
+      this.statusRequestPromise === i && (this.statusRequestPromise = null);
+    }
+  }
+  async requestStatusInternal(t) {
+    if (!Number.isInteger(t) || t < 250 || t > 3e4)
+      throw new D("protocol", "Status timeout must be an integer between 250 and 30000 ms.");
+    const i = X(_.GetStatus, Uint8Array.of(0)), r = this.stateManager.waitForNotification(_.GetStatus, t);
+    try {
+      return await this.transport.write("control", i), await r;
+    } catch (n) {
+      throw this.stateManager.cancelNotification(_.GetStatus, r), n;
+    }
   }
   /**
    * Send print request with number of lines
    */
-  async printRequest(t, e = 0) {
+  async printRequest(t, i = 0) {
+    if (!Number.isInteger(t) || t < 0 || t > 65535)
+      throw new D(
+        "protocol",
+        `Print line count must be an integer between 0 and 65535, got ${t}`
+      );
     const r = new Uint8Array(4);
-    r[0] = t & 255, r[1] = t >> 8 & 255, r[2] = 48, r[3] = e;
-    const i = b(d.PrintRequest, r);
-    return await this.controlWrite(i), this.stateManager.waitForNotification(d.PrintRequest, 5e3);
+    r[0] = t & 255, r[1] = t >> 8 & 255, r[2] = 48, r[3] = i;
+    const n = X(_.PrintRequest, r), s = this.stateManager.waitForNotification(_.PrintRequest, 5e3);
+    try {
+      return await this.transport.write("control", n), await s;
+    } catch (o) {
+      throw this.stateManager.cancelNotification(_.PrintRequest, s), o;
+    }
   }
   /**
    * Flush data to printer
    */
   async flushData() {
-    const t = b(d.FlushData, Uint8Array.of(0));
-    await this.controlWrite(t), await v(50);
+    const t = X(_.FlushData, Uint8Array.of(0));
+    await this.transport.write("control", t), await j(50);
   }
   /**
    * Send data chunks to printer
    */
-  async sendDataChunks(t, e = m) {
-    let r = 0;
-    for (; r < t.length; ) {
-      const i = t.slice(r, Math.min(r + e, t.length));
-      await this.dataWrite(i), r += i.length, await v(15);
+  async sendDataChunks(t, i = Math.min(this.profileDefinition.dataChunkSize, this.transport.maxWriteBytes), r) {
+    if (!Number.isFinite(i) || i <= 0)
+      throw new D("protocol", `Data chunk size must be a positive finite number, got ${i}`);
+    const n = Math.max(1, Math.floor(i));
+    let s = 0;
+    for (; s < t.length; ) {
+      const o = t.slice(
+        s,
+        Math.min(s + n, t.length)
+      );
+      await this.transport.write("data", o), s += o.length, r?.(s, t.length), await j(this.profileDefinition.dataChunkDelayMs);
     }
   }
-  /**
-   * Wait for print completion
-   */
-  async waitForPrintComplete(t = 2e4) {
-    this.stateManager.resetPrintComplete();
-    const e = Date.now();
-    for (; !this.stateManager.isPrintComplete() && Date.now() - e < t; )
-      await v(100);
-    if (!this.stateManager.isPrintComplete())
-      throw new Error("Print timeout: Did not receive completion notification");
+  /** Arm the completion latch before a print request is sent. */
+  prepareForPrint() {
+    return this.stateManager.resetPrintComplete(), this.stateManager.getPrintCompleteSequence();
+  }
+  /** Wait for print completion without clearing an already received response. */
+  async waitForPrintComplete(t = 2e4, i) {
+    const r = Date.now();
+    for (; !this.disposed && (i === void 0 ? !this.stateManager.isPrintComplete() : this.stateManager.getPrintCompleteSequence() <= i) && Date.now() - r < t; )
+      await j(100);
+    if (this.disposed)
+      throw new D("cancelled", "Printer controller disposed", {
+        recoverable: !0
+      });
+    if (!(i === void 0 ? this.stateManager.isPrintComplete() : this.stateManager.getPrintCompleteSequence() > i))
+      throw new D(
+        "timeout",
+        "Print timeout: Did not receive completion notification",
+        { recoverable: !0 }
+      );
   }
 }
-function x(a) {
-  if (a.length !== y)
+function Gi(e, t = R) {
+  if (e.length !== t.widthDots)
     throw new Error(
-      `Row length must be ${y}, got ${a.length}`
+      `Row length must be ${t.widthDots}, got ${e.length}`
     );
-  const t = new Uint8Array(m);
-  for (let e = 0; e < m; e++) {
-    let r = 0;
-    for (let i = 0; i < 8; i++)
-      a[e * 8 + i] && (r |= 1 << i);
-    t[e] = r;
+  const i = new Uint8Array(t.bytesPerRow);
+  for (let r = 0; r < t.widthDots; r += 1) {
+    const s = e[r] === !0 === t.blackIsOne ? 1 : 0, o = Math.floor(r / 8), a = t.bitOrder === "lsb-first" ? r % 8 : 7 - r % 8;
+    i[o] |= s << a;
   }
-  return t;
+  return i;
 }
-function B(a) {
-  const t = a.length;
-  let e = new Uint8Array(0);
-  for (let r = 0; r < t; r++) {
-    const i = x(a[r]), s = new Uint8Array(e.length + i.length);
-    s.set(e), s.set(i, e.length), e = s;
-  }
-  if (e.length < S) {
-    const r = new Uint8Array(S - e.length), i = new Uint8Array(e.length + r.length);
-    i.set(e), i.set(r, e.length), e = i;
-  }
-  return e;
+function Vi(e, t = R) {
+  return dt(e, t).data;
 }
-class U {
+class te {
   listeners = /* @__PURE__ */ new Map();
   /**
    * Subscribe to an event
@@ -487,10 +763,10 @@ class U {
    * @param listener Callback function
    * @returns Unsubscribe function
    */
-  on(t, e) {
-    return this.listeners.has(t) || this.listeners.set(t, /* @__PURE__ */ new Set()), this.listeners.get(t).add(e), () => {
+  on(t, i) {
+    return this.listeners.has(t) || this.listeners.set(t, /* @__PURE__ */ new Set()), this.listeners.get(t).add(i), () => {
       const r = this.listeners.get(t);
-      r && r.delete(e);
+      r && r.delete(i);
     };
   }
   /**
@@ -498,12 +774,12 @@ class U {
    * @param event Event to emit
    */
   emit(t) {
-    const e = this.listeners.get(t.type);
-    e && e.forEach((r) => {
+    const i = this.listeners.get(t.type);
+    i && i.forEach((r) => {
       try {
         r(t);
-      } catch (i) {
-        console.error("Error in event listener:", i);
+      } catch (n) {
+        console.error("Error in event listener:", n);
       }
     });
   }
@@ -521,10 +797,11 @@ class U {
     this.listeners.delete(t);
   }
 }
-class F {
+class ee {
   _isConnected = !1;
   _isPrinting = !1;
   _printerState = null;
+  _statusVerified = !1;
   _statusMessage = "Ready to connect printer";
   _ditherMethod = "steinberg";
   _printIntensity = 93;
@@ -537,6 +814,9 @@ class F {
   }
   get printerState() {
     return this._printerState;
+  }
+  get statusVerified() {
+    return this._statusVerified;
   }
   get statusMessage() {
     return this._statusMessage;
@@ -557,6 +837,9 @@ class F {
   setPrinterState(t) {
     this._printerState = t;
   }
+  setStatusVerified(t) {
+    this._statusVerified = t;
+  }
   setStatusMessage(t) {
     this._statusMessage = t;
   }
@@ -564,7 +847,7 @@ class F {
     this._ditherMethod = t;
   }
   setPrintIntensity(t) {
-    if (t < 0 || t > 255)
+    if (!Number.isInteger(t) || !Number.isFinite(t) || t < 0 || t > 255)
       throw new Error("Print intensity must be between 0 and 255");
     this._printIntensity = t;
   }
@@ -572,29 +855,28 @@ class F {
    * Reset to initial state
    */
   reset() {
-    this._isConnected = !1, this._isPrinting = !1, this._printerState = null, this._statusMessage = "Ready to connect printer";
+    this._isConnected = !1, this._isPrinting = !1, this._printerState = null, this._statusVerified = !1, this._statusMessage = "Ready to connect printer";
   }
 }
-class w {
+class G {
 }
-class H extends w {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  apply(t, e, r) {
-    for (let i = 0; i < t.length; ++i)
-      t[i] = t[i] > 128 ? 255 : 0;
+class ie extends G {
+  apply(t, i, r) {
+    for (let n = 0; n < t.length; ++n)
+      t[n] = t[n] > 128 ? 255 : 0;
     return t;
   }
   getName() {
     return "threshold";
   }
 }
-class V extends w {
-  apply(t, e, r) {
-    let i = 0;
+class re extends G {
+  apply(t, i, r) {
+    let n = 0;
     for (let s = 0; s < r; ++s)
-      for (let n = 0; n < e; ++n) {
-        const c = t[i], o = c > 128 ? 255 : 0, h = c - o;
-        t[i] = o, n < e - 1 && (t[i + 1] += h * 7 / 16), s < r - 1 && (n > 0 && (t[i + e - 1] += h * 3 / 16), t[i + e] += h * 5 / 16, n < e - 1 && (t[i + e + 1] += h / 16)), ++i;
+      for (let o = 0; o < i; ++o) {
+        const a = t[n], c = a > 128 ? 255 : 0, h = a - c;
+        t[n] = c, o < i - 1 && (t[n + 1] += h * 7 / 16), s < r - 1 && (o > 0 && (t[n + i - 1] += h * 3 / 16), t[n + i] += h * 5 / 16, o < i - 1 && (t[n + i + 1] += h / 16)), ++n;
       }
     return t;
   }
@@ -602,7 +884,7 @@ class V extends w {
     return "steinberg";
   }
 }
-class q extends w {
+class ne extends G {
   bayer8 = [
     0,
     48,
@@ -670,13 +952,13 @@ class q extends w {
     21
   ];
   ditherFactor = 0.6;
-  apply(t, e, r) {
-    let i = 0;
+  apply(t, i, r) {
+    let n = 0;
     for (let s = 0; s < r; ++s)
-      for (let n = 0; n < e; ++n) {
-        const c = this.bayer8[s % 8 * 8 + n % 8];
-        let o = t[i];
-        o = o + (c - 32) * this.ditherFactor, o = Math.max(0, Math.min(255, o)), t[i] = o > 128 ? 255 : 0, ++i;
+      for (let o = 0; o < i; ++o) {
+        const a = this.bayer8[s % 8 * 8 + o % 8];
+        let c = t[n];
+        c = c + (a - 32) * this.ditherFactor, c = Math.max(0, Math.min(255, c)), t[n] = c > 128 ? 255 : 0, ++n;
       }
     return t;
   }
@@ -684,13 +966,13 @@ class q extends w {
     return "bayer";
   }
 }
-class Y extends w {
-  apply(t, e, r) {
-    let i = 0;
+class se extends G {
+  apply(t, i, r) {
+    let n = 0;
     for (let s = 0; s < r; ++s)
-      for (let n = 0; n < e; ++n) {
-        const c = t[i], o = c > 128 ? 255 : 0, h = c - o >> 3;
-        t[i] = o, n < e - 1 && (t[i + 1] += h), n < e - 2 && (t[i + 2] += h), s < r - 1 && (n > 0 && (t[i + e - 1] += h), t[i + e] += h, n < e - 1 && (t[i + e + 1] += h)), s < r - 2 && (t[i + 2 * e] += h), ++i;
+      for (let o = 0; o < i; ++o) {
+        const a = t[n], c = a > 128 ? 255 : 0, h = a - c >> 3;
+        t[n] = c, o < i - 1 && (t[n + 1] += h), o < i - 2 && (t[n + 2] += h), s < r - 1 && (o > 0 && (t[n + i - 1] += h), t[n + i] += h, o < i - 1 && (t[n + i + 1] += h)), s < r - 2 && (t[n + 2 * i] += h), ++n;
       }
     return t;
   }
@@ -698,166 +980,211 @@ class Y extends w {
     return "atkinson";
   }
 }
-class j extends w {
-  apply(t, e, r) {
-    for (let c = 0; c < r - 4; c += 4) {
-      for (let o = 0; o < e - 4; o += 4) {
+class oe extends G {
+  apply(t, i, r) {
+    for (let a = 0; a < r - 4; a += 4) {
+      for (let c = 0; c < i - 4; c += 4) {
         let h = 0;
         for (let l = 0; l < 4; ++l)
-          for (let p = 0; p < 4; ++p)
-            h += t[(c + p) * e + o + l];
-        const f = (1 - h / 16 / 255) * 4;
+          for (let f = 0; f < 4; ++f)
+            h += t[(a + f) * i + c + l];
+        const u = (1 - h / 16 / 255) * 4;
         for (let l = 0; l < 4; ++l)
-          for (let p = 0; p < 4; ++p)
-            t[(c + p) * e + o + l] = Math.abs(l - 3) >= f || Math.abs(p - 3) >= f ? 255 : 0;
+          for (let f = 0; f < 4; ++f)
+            t[(a + f) * i + c + l] = Math.abs(l - 3) >= u || Math.abs(f - 3) >= u ? 255 : 0;
       }
-      for (let o = e - e % 4; o < e; ++o)
-        t[c * e + o] = 255;
+      for (let c = i - i % 4; c < i; ++c)
+        t[a * i + c] = 255;
     }
-    for (let c = r - r % 4; c < r; ++c)
-      for (let o = 0; o < e; ++o)
-        t[c * e + o] = 255;
+    for (let a = r - r % 4; a < r; ++a)
+      for (let c = 0; c < i; ++c)
+        t[a * i + c] = 255;
     return t;
   }
   getName() {
     return "pattern";
   }
 }
-function k(a) {
-  switch (a) {
+function ae(e) {
+  switch (e) {
     case "steinberg":
-      return new V();
+      return new re();
     case "bayer":
-      return new q();
+      return new ne();
     case "atkinson":
-      return new Y();
+      return new se();
     case "pattern":
-      return new j();
+      return new oe();
     case "threshold":
     default:
-      return new H();
+      return new ie();
   }
 }
-function $(a, t, e, r) {
+function ce(e, t, i, r) {
   if (r === 0)
-    return a;
-  const i = new Uint8ClampedArray(a.length);
+    return e;
+  const n = new Uint8ClampedArray(e.length);
   switch (r) {
     case 90:
-      for (let s = 0; s < e; s++)
-        for (let n = 0; n < t; n++) {
-          const c = e - 1 - s, o = n;
-          i[o * e + c] = a[s * t + n];
+      for (let s = 0; s < i; s++)
+        for (let o = 0; o < t; o++) {
+          const a = i - 1 - s, c = o;
+          n[c * i + a] = e[s * t + o];
         }
       break;
     case 180:
-      for (let s = 0; s < e; s++)
-        for (let n = 0; n < t; n++) {
-          const c = t - 1 - n, o = e - 1 - s;
-          i[o * t + c] = a[s * t + n];
+      for (let s = 0; s < i; s++)
+        for (let o = 0; o < t; o++) {
+          const a = t - 1 - o, c = i - 1 - s;
+          n[c * t + a] = e[s * t + o];
         }
       break;
     case 270:
-      for (let s = 0; s < e; s++)
-        for (let n = 0; n < t; n++) {
-          const c = s, o = t - 1 - n;
-          i[o * e + c] = a[s * t + n];
+      for (let s = 0; s < i; s++)
+        for (let o = 0; o < t; o++) {
+          const a = s, c = t - 1 - o;
+          n[c * i + a] = e[s * t + o];
         }
       break;
   }
-  return i;
+  return n;
 }
-function G(a, t, e, r) {
+function he(e, t, i, r) {
   if (r === "none")
-    return a;
-  const i = new Uint8ClampedArray(a.length);
+    return e;
+  const n = new Uint8ClampedArray(e.length);
   switch (r) {
     case "h":
-      for (let s = 0; s < e; s++)
-        for (let n = 0; n < t; n++)
-          i[s * t + n] = a[s * t + (t - n - 1)];
+      for (let s = 0; s < i; s++)
+        for (let o = 0; o < t; o++)
+          n[s * t + o] = e[s * t + (t - o - 1)];
       break;
     case "v":
-      for (let s = 0; s < e; s++)
-        for (let n = 0; n < t; n++)
-          i[s * t + n] = a[(e - s - 1) * t + n];
+      for (let s = 0; s < i; s++)
+        for (let o = 0; o < t; o++)
+          n[s * t + o] = e[(i - s - 1) * t + o];
       break;
     case "both":
-      for (let s = 0; s < e; s++)
-        for (let n = 0; n < t; n++)
-          i[s * t + n] = a[(e - s - 1) * t + (t - n - 1)];
+      for (let s = 0; s < i; s++)
+        for (let o = 0; o < t; o++)
+          n[s * t + o] = e[(i - s - 1) * t + (t - o - 1)];
       break;
   }
-  return i;
+  return n;
 }
-function X(a, t = 128, e = !0) {
-  const r = new Uint8ClampedArray(a.length);
-  for (let i = 0; i < r.length; ++i) {
-    const s = a[i];
-    let n = s & 255, c = s >> 8 & 255, o = s >> 16 & 255;
-    const h = (s >> 24 & 255) / 255;
-    if (h < 1 && e) {
+function le(e, t = 128, i = !0) {
+  if (e.length % 4 !== 0)
+    throw new Error(`RGBA data length must be divisible by 4, got ${e.length}`);
+  const r = new Uint8ClampedArray(e.length / 4);
+  for (let n = 0; n < r.length; n += 1) {
+    const s = n * 4;
+    let o = e[s], a = e[s + 1], c = e[s + 2];
+    const h = e[s + 3] / 255;
+    if (h < 1 && i) {
       const l = 1 - h;
-      n += (255 - n) * l, c += (255 - c) * l, o += (255 - o) * l;
+      o += (255 - o) * l, a += (255 - a) * l, c += (255 - c) * l;
     } else
-      n *= h, c *= h, o *= h;
-    let f = n * 0.2125 + c * 0.7154 + o * 0.0721;
-    f += (t - 128) * (1 - f / 255) * (f / 255) * 2, r[i] = f;
+      o *= h, a *= h, c *= h;
+    let u = o * 0.2125 + a * 0.7154 + c * 0.0721;
+    u += (t - 128) * (1 - u / 255) * (u / 255) * 2, r[n] = u;
   }
   return r;
 }
-function J(a, t = !1) {
-  const e = new Uint32Array(a.length);
-  for (let r = 0; r < a.length; ++r) {
-    const i = a[r] === 255 && t ? 0 : 4278190080;
-    e[r] = i | a[r] << 16 | a[r] << 8 | a[r];
+function ue(e, t = !1) {
+  const i = new Uint32Array(e.length);
+  for (let r = 0; r < e.length; ++r) {
+    const n = e[r] === 255 && t ? 0 : 4278190080;
+    i[r] = n | e[r] << 16 | e[r] << 8 | e[r];
   }
-  return e;
+  return i;
 }
-function z(a, t, e) {
-  const r = Math.min(t, a.width), i = Math.min(e, a.height), s = new Uint8ClampedArray(r * i * 4);
-  for (let n = 0; n < i; n++)
-    for (let c = 0; c < r; c++) {
-      const o = (n * a.width + c) * 4, h = (n * r + c) * 4;
-      s[h] = a.data[o], s[h + 1] = a.data[o + 1], s[h + 2] = a.data[o + 2], s[h + 3] = a.data[o + 3];
+function fe(e, t, i) {
+  const r = Math.min(t, e.width), n = Math.min(i, e.height), s = new Uint8ClampedArray(r * n * 4);
+  for (let o = 0; o < n; o++)
+    for (let a = 0; a < r; a++) {
+      const c = (o * e.width + a) * 4, h = (o * r + a) * 4;
+      s[h] = e.data[c], s[h + 1] = e.data[c + 1], s[h + 2] = e.data[c + 2], s[h + 3] = e.data[c + 3];
     }
   return {
     data: s,
     width: r,
+    height: n
+  };
+}
+function de(e, t, i) {
+  const r = new Uint8ClampedArray(t * i * 4), n = e.width / t, s = e.height / i;
+  for (let o = 0; o < i; o++)
+    for (let a = 0; a < t; a++) {
+      const c = Math.floor(a * n), u = (Math.floor(o * s) * e.width + c) * 4, l = (o * t + a) * 4;
+      r[l] = e.data[u], r[l + 1] = e.data[u + 1], r[l + 2] = e.data[u + 2], r[l + 3] = e.data[u + 3];
+    }
+  return {
+    data: r,
+    width: t,
     height: i
   };
 }
-function K(a, t) {
-  const e = new Uint32Array(
-    new Uint8ClampedArray(a.data).buffer
-  ), r = a.width, i = a.height;
-  let s = X(e, t.brightness, !0);
-  s = k(t.dither).apply(s, r, i), s = G(s, r, i, t.flip);
-  let c = r, o = i;
-  s = $(s, r, i, t.rotate), (t.rotate === 90 || t.rotate === 270) && (c = i, o = r);
-  const h = J(s, !0), f = 384, l = [];
-  for (let p = 0; p < o; p++) {
-    const E = [];
-    for (let C = 0; C < c; C++) {
-      const T = p * c + C, A = s[T];
-      E.push(A < 128);
+const me = ["threshold", "steinberg", "bayer", "atkinson", "pattern"], pe = [0, 90, 180, 270], ge = ["none", "h", "v", "both"], Mt = 2e6;
+function $t(e, t, i = 384) {
+  const r = e.width, n = e.height;
+  if (!Number.isSafeInteger(r) || !Number.isSafeInteger(n) || r <= 0 || n <= 0 || r * n > Mt)
+    throw new Error(`Image dimensions must be positive safe integers within ${Mt} pixels, got ${r}x${n}`);
+  if (!me.includes(t.dither) || !pe.includes(t.rotate) || !ge.includes(t.flip))
+    throw new Error("Unsupported image processing option");
+  if (!Number.isInteger(t.brightness) || t.brightness < 0 || t.brightness > 255)
+    throw new Error("Image brightness must be an integer between 0 and 255");
+  if (!Number.isSafeInteger(i) || i <= 0)
+    throw new Error("Target width must be a positive safe integer");
+  if ("pixelFormat" in e && e.pixelFormat !== "rgba8888")
+    throw new Error(`Unsupported pixel format: ${e.pixelFormat}`);
+  if (r <= 0 || n <= 0)
+    throw new Error(`Image dimensions must be greater than zero, got ${r}x${n}`);
+  const s = r * 4, o = e.strideBytes ?? s;
+  if (!Number.isSafeInteger(o) || o < s)
+    throw new Error(
+      `Image stride must be at least ${s} bytes, got ${o}`
+    );
+  const a = o * n;
+  if (e.data.length < a)
+    throw new Error(
+      `Image data is shorter than its dimensions require: expected ${a}, got ${e.data.length}`
+    );
+  const c = new Uint8ClampedArray(r * n * 4);
+  for (let w = 0; w < n; w += 1) {
+    const d = w * o, x = w * s;
+    c.set(
+      e.data.subarray(d, d + s),
+      x
+    );
+  }
+  let h = le(c, t.brightness, !0);
+  h = ae(t.dither).apply(h, r, n), h = he(h, r, n, t.flip);
+  let l = r, f = n;
+  h = ce(h, r, n, t.rotate), (t.rotate === 90 || t.rotate === 270) && (l = n, f = r);
+  const y = ue(h, !0), g = [];
+  for (let w = 0; w < f; w++) {
+    const d = [];
+    for (let x = 0; x < Math.min(l, i); x++) {
+      const M = w * l + x, E = h[M];
+      d.push(E < 128);
     }
-    for (; E.length < f; )
-      E.push(!1);
-    l.push(E);
+    for (; d.length < i; )
+      d.push(!1);
+    g.push(d);
   }
   return {
-    processedData: h,
-    width: c,
-    height: o,
-    binaryRows: l
+    processedData: y,
+    width: l,
+    height: f,
+    binaryRows: g
   };
 }
-class Q {
+class be {
   imageData;
   options;
-  constructor(t, e = {}) {
-    this.imageData = t, this.options = e;
+  profile;
+  constructor(t, i = {}, r = R) {
+    this.imageData = t, this.options = i, this.profile = r;
   }
   /**
    * Process and prepare image for printing
@@ -865,25 +1192,28 @@ class Q {
    * @returns Prepared image buffer and metadata
    */
   prepare(t) {
-    const e = {
+    const i = {
       dither: this.options.dither ?? t,
       brightness: this.options.brightness ?? 128,
       flip: this.options.flip ?? "none",
       rotate: this.options.rotate ?? 0
     };
     let r = this.imageData;
-    this.imageData.width > y && (r = z(
+    this.imageData.width > this.profile.widthDots && (r = fe(
       this.imageData,
-      y,
+      this.profile.widthDots,
       this.imageData.height
     ));
-    const { binaryRows: i } = K(
+    const { binaryRows: n } = $t(
       r,
-      e
-    );
+      i,
+      this.profile.widthDots
+    ), s = dt(n, this.profile);
     return {
-      imageBuffer: B(i),
-      numLines: i.length
+      imageBuffer: s.data,
+      numLines: s.contentHeightRows,
+      wireLines: s.wireHeightRows,
+      raster: s
     };
   }
   /**
@@ -892,20 +1222,50 @@ class Q {
    * @returns Print intensity
    */
   getIntensity(t) {
-    return this.options.intensity ?? t;
+    const i = this.options.intensity ?? t;
+    if (!Number.isInteger(i) || !Number.isFinite(i) || i < 0 || i > 255)
+      throw new Error("Print intensity must be an integer between 0 and 255");
+    return i;
   }
 }
-class Z {
+function Dt(e) {
+  if (e instanceof Uint8Array)
+    return e;
+  if (e instanceof ArrayBuffer)
+    return new Uint8Array(e);
+  if (ArrayBuffer.isView(e))
+    return new Uint8Array(e.buffer, e.byteOffset, e.byteLength);
+  throw new TypeError("Unsupported Bluetooth write buffer");
+}
+class ji {
   adapter;
   printer = null;
   connection = null;
   device = null;
   eventEmitter;
   state;
-  constructor(t) {
+  profile;
+  connectPromise = null;
+  disconnectRequested = !1;
+  connectionGeneration = 0;
+  notificationListener = null;
+  connectionDisconnectUnsubscribe = null;
+  handlingUnexpectedDisconnect = !1;
+  activePrintToken = null;
+  activePrintPromise = null;
+  constructor(t, i = R) {
     if (!t.isAvailable())
-      throw new Error("Bluetooth is not available in this environment");
-    this.adapter = t, this.eventEmitter = new U(), this.state = new F();
+      throw new D(
+        "bluetooth-unavailable",
+        "Bluetooth is not available in this environment"
+      );
+    this.adapter = t, this.eventEmitter = new te(), this.state = new ee(), this.profile = i;
+  }
+  get printerProfile() {
+    return this.profile;
+  }
+  get connectedDevice() {
+    return this.device;
   }
   // Public getters delegated to state
   get isConnected() {
@@ -916,6 +1276,13 @@ class Z {
   }
   get printerState() {
     return this.state.printerState;
+  }
+  get statusVerified() {
+    return this.state.statusVerified;
+  }
+  get isPrintReady() {
+    const t = this.printerState;
+    return this.state.isConnected && this.state.statusVerified && t !== null && !t.printing && !t.paper_jam && !t.out_of_paper && !t.cover_open && !t.battery_low && !t.overheat;
   }
   get statusMessage() {
     return this.state.statusMessage;
@@ -936,31 +1303,59 @@ class Z {
   /**
    * Subscribe to events
    */
-  on(t, e) {
-    return this.eventEmitter.on(t, e);
+  on(t, i) {
+    return this.eventEmitter.on(t, i);
   }
   /**
    * Update status message and emit state change if needed
    */
-  updateStatus(t, e) {
-    this.state.setStatusMessage(t), e && (this.state.setPrinterState(e), this.eventEmitter.emit({ type: "stateChange", state: e }));
+  updateStatus(t, i) {
+    this.state.setStatusMessage(t), i && (this.state.setPrinterState(i), this.eventEmitter.emit({ type: "stateChange", state: i }));
   }
   /**
    * Connect to printer via Bluetooth
    */
   async connect() {
+    if (this.state.isConnected)
+      return;
+    if (this.connectPromise)
+      return this.connectPromise;
+    this.disconnectRequested = !1;
+    const t = this.connectInternal();
+    this.connectPromise = t;
     try {
-      this.updateStatus("Connecting to printer..."), this.device = await this.adapter.requestDevice(), this.connection = await this.adapter.connect(this.device), this.printer = new W(
-        this.connection.controlCharacteristic.writeValueWithoutResponse.bind(
-          this.connection.controlCharacteristic
-        ),
-        this.connection.dataCharacteristic.writeValueWithoutResponse.bind(
-          this.connection.dataCharacteristic
-        )
-      ), await this.setupNotifications(), this.state.setConnected(!0), this.updateStatus("Printer connected"), this.eventEmitter.emit({ type: "connected", device: this.device }), await this.getStatus();
+      await t;
+    } finally {
+      this.connectPromise === t && (this.connectPromise = null);
+    }
+  }
+  async connectInternal() {
+    try {
+      this.updateStatus("Connecting to printer..."), this.device = await this.adapter.requestDevice(), this.connection = await this.adapter.connect(this.device);
+      const t = ++this.connectionGeneration;
+      if (this.disconnectRequested)
+        throw new D("cancelled", "Connection cancelled");
+      this.connectionDisconnectUnsubscribe = this.connection.onDisconnect?.(
+        (n) => void this.handleUnexpectedDisconnect(n)
+      ) ?? null;
+      const i = this.connection;
+      if (!i)
+        throw new D("connection-failed", "Bluetooth connection disappeared during setup");
+      this.printer = new Kt(
+        async (n) => {
+          await i.controlCharacteristic.writeValueWithoutResponse(Dt(n));
+        },
+        async (n) => {
+          await i.dataCharacteristic.writeValueWithoutResponse(Dt(n));
+        },
+        this.profile
+      ), await this.setupNotifications(), this.assertConnectionSession(t);
+      const r = await this.verifyInitialStatus(t);
+      this.assertConnectionSession(t), this.state.setConnected(!0), this.state.setStatusVerified(r !== null), this.updateStatus(r ? "Printer connected" : "Printer connected; status unavailable"), this.eventEmitter.emit({ type: "connected", device: this.device });
     } catch (t) {
-      const e = t;
-      throw this.updateStatus(`Error: ${e.message}`), this.eventEmitter.emit({ type: "error", error: e }), t;
+      this.state.reset(), await this.cleanupConnection();
+      const i = Y(t, "connection-failed");
+      throw this.updateStatus(`Error: ${i.message}`), this.eventEmitter.emit({ type: "error", error: i }), i;
     }
   }
   /**
@@ -969,83 +1364,1050 @@ class Z {
   async setupNotifications() {
     if (!this.connection || !this.printer)
       throw new Error("No connection or printer available");
-    const t = (e) => {
-      const i = e.target.value;
-      i && this.printer && (this.printer.notify(new Uint8Array(i.buffer)), this.updateStatus("Printer state updated", { ...this.printer.state }));
+    const t = (i) => {
+      i.value && this.printer && this.printer.notifyStrict(i.value) && (this.state.setStatusVerified(!0), this.updateStatus("Printer state updated", { ...this.printer.state }));
     };
     await this.connection.notifyCharacteristic.startNotifications(), this.connection.notifyCharacteristic.addEventListener(
       "characteristicvaluechanged",
       t
-    );
+    ), this.notificationListener = t;
+  }
+  async handleUnexpectedDisconnect(t) {
+    if (!(this.handlingUnexpectedDisconnect || !this.connection && !this.state.isConnected)) {
+      this.handlingUnexpectedDisconnect = !0;
+      try {
+        await this.cleanupConnection(), this.state.reset(), this.updateStatus(t ? `Error: ${t.message}` : "Printer disconnected"), t && this.eventEmitter.emit({ type: "error", error: Y(t, "transport") }), this.eventEmitter.emit({ type: "disconnected" });
+      } finally {
+        this.handlingUnexpectedDisconnect = !1;
+      }
+    }
   }
   /**
    * Get current printer status
    */
-  async getStatus() {
-    if (!this.printer || !this.state.isConnected)
+  async getStatus(t = !1, i = 5e3, r = !0) {
+    if (!this.printer || !this.state.isConnected && !t)
       return this.updateStatus("Printer not connected"), null;
     try {
-      await this.printer.requestStatus();
-      const t = { ...this.printer.state };
-      return this.updateStatus("Status updated", t), t;
-    } catch (t) {
-      const e = t;
-      return this.updateStatus(`Error: ${e.message}`), this.eventEmitter.emit({ type: "error", error: e }), null;
+      if ((await this.printer.requestStatus(i)).length < 7)
+        throw new D("protocol", "Printer status response is too short", {
+          recoverable: !0
+        });
+      const s = { ...this.printer.state };
+      return this.state.setStatusVerified(!0), this.updateStatus("Status updated", s), s;
+    } catch (n) {
+      const s = Y(n, "transport");
+      return this.state.setStatusVerified(!1), this.state.setPrinterState(null), this.updateStatus(`Error: ${s.message}`), r && this.eventEmitter.emit({ type: "error", error: s }), null;
     }
+  }
+  async verifyInitialStatus(t) {
+    for (let r = 0; r < 3; r += 1) {
+      this.assertConnectionSession(t);
+      const n = await this.getStatus(!0, 1800, !1);
+      if (n) return n;
+      r < 2 && (this.updateStatus(`Waiting for printer status (${r + 2}/3)...`), await new Promise((s) => setTimeout(s, 200 * (r + 1))));
+    }
+    return null;
+  }
+  /** Refresh status and fail closed when the physical printer is not safe to use. */
+  async ensurePrintReady(t = 3e3) {
+    if (!this.printer || !this.state.isConnected)
+      throw new D("not-connected", "Printer not connected");
+    const i = await this.getStatus(!1, t, !1);
+    if (!i)
+      throw new D("timeout", "Printer status could not be verified", { recoverable: !0 });
+    const r = [];
+    if (i.printing && r.push("printer is already printing"), i.paper_jam && r.push("paper jam"), i.out_of_paper && r.push("out of paper"), i.cover_open && r.push("cover open"), i.battery_low && r.push("battery low"), i.overheat && r.push("overheated"), r.length > 0)
+      throw new D("printer-fault", `Printer is not ready: ${r.join(", ")}`, { recoverable: !0 });
+    return i;
+  }
+  emitPrintProgress(t, i, r = 0, n = 0) {
+    this.eventEmitter.emit({
+      type: "printProgress",
+      phase: t,
+      progress: Math.max(0, Math.min(100, i)),
+      sentBytes: r,
+      totalBytes: n
+    });
   }
   /**
    * Print from image data
    */
-  async print(t, e = {}) {
-    if (!this.printer || !this.state.isConnected)
-      throw new Error("Printer not connected");
+  async print(t, i = {}) {
+    const r = this.printInternal(t, i);
+    this.activePrintPromise = r;
     try {
-      this.state.setPrinting(!0), this.updateStatus("Preparing to print...");
-      const r = new Q(t, e), { imageBuffer: i, numLines: s } = r.prepare(
-        this.state.ditherMethod
-      ), n = r.getIntensity(this.state.printIntensity);
-      this.updateStatus("Configuring printer..."), await this.printer.setIntensity(n);
-      const c = await this.printer.requestStatus();
-      if (c.length >= 13 && c[12] !== 0)
-        throw new Error(`Printer error: ${c[13]}`);
-      this.updateStatus("Sending data...");
-      const o = await this.printer.printRequest(s, 0);
-      if (!o || o[0] !== 0)
-        throw new Error("Print request rejected");
-      await this.printer.sendDataChunks(i), await this.printer.flushData(), this.updateStatus("Printing..."), await this.printer.waitForPrintComplete(), this.updateStatus("Print completed"), await this.getStatus();
-    } catch (r) {
-      const i = r;
-      throw this.updateStatus(`Error: ${i.message}`), this.eventEmitter.emit({ type: "error", error: i }), r;
+      await r;
     } finally {
-      this.state.setPrinting(!1);
+      this.activePrintPromise === r && (this.activePrintPromise = null);
     }
+  }
+  /**
+   * Send a raster that has already been rendered for this printer profile.
+   *
+   * Document renderers can apply brightness and dithering before this method
+   * is called. Keeping that raster intact is important: processing it again
+   * would make the physical output differ from the preview and would apply
+   * dithering twice.
+   */
+  async printRaster(t, i = {}) {
+    const r = i.intensity ?? this.state.printIntensity;
+    if (this.validateRaster(t), !Number.isInteger(r) || !Number.isFinite(r) || r < 0 || r > 255)
+      throw new D("protocol", `Print intensity must be an integer between 0 and 255, got ${r}`);
+    const n = this.printRasterInternal(t, r);
+    this.activePrintPromise = n;
+    try {
+      await n;
+    } finally {
+      this.activePrintPromise === n && (this.activePrintPromise = null);
+    }
+  }
+  async printInternal(t, i = {}) {
+    const r = new be(t, i, this.profile), { raster: n } = r.prepare(this.state.ditherMethod), s = r.getIntensity(this.state.printIntensity);
+    await this.printRasterInternal(n, s);
+  }
+  validateRaster(t) {
+    const i = t ? t.wireHeightRows * t.bytesPerRow : Number.NaN;
+    if (!t || t.widthDots !== this.profile.widthDots || t.bytesPerRow !== this.profile.bytesPerRow || t.heightDots !== t.contentHeightRows || !Number.isSafeInteger(t.contentHeightRows) || t.contentHeightRows <= 0 || t.contentHeightRows > 65535 || !Number.isSafeInteger(t.wireHeightRows) || t.wireHeightRows < this.profile.minimumRows || t.wireHeightRows < t.contentHeightRows || t.wireHeightRows > 65535 || t.bitOrder !== this.profile.bitOrder || t.blackIsOne !== this.profile.blackIsOne || !Number.isSafeInteger(i) || !(t.data instanceof Uint8Array) || t.data.length !== i)
+      throw new D("protocol", "Raster does not match the printer profile");
+  }
+  async printRasterInternal(t, i) {
+    this.validateRaster(t);
+    const r = this.printer, n = this.connectionGeneration;
+    if (!r || !this.state.isConnected)
+      throw new D("not-connected", "Printer not connected");
+    if (this.state.isPrinting)
+      throw new D(
+        "busy",
+        "Another print job is already running",
+        { recoverable: !0 }
+      );
+    const s = t.data, o = t.contentHeightRows;
+    let a = 0;
+    const c = Symbol("print-job");
+    this.activePrintToken = c;
+    try {
+      this.assertActiveSession(r, n), await this.ensurePrintReady(), this.assertActiveSession(r, n), this.state.setPrinting(!0), this.emitPrintProgress("queued", 0), this.updateStatus("Preparing to print..."), this.emitPrintProgress("preparing", 2), this.updateStatus("Configuring printer..."), this.emitPrintProgress("configuring", 10, 0, s.length), await r.setIntensity(i), this.assertActiveSession(r, n), this.updateStatus("Sending data..."), this.emitPrintProgress("sending", 15, 0, s.length);
+      const h = r.prepareForPrint(), u = await r.printRequest(o, 0);
+      if (this.assertActiveSession(r, n), !u || u[0] !== 0)
+        throw new D(
+          "printer-rejected",
+          "Print request rejected",
+          { recoverable: !0 }
+        );
+      await r.sendDataChunks(s, void 0, (l, f) => {
+        a = 15 + l / Math.max(f, 1) * 65, this.emitPrintProgress("sending", a, l, f);
+      }), this.assertActiveSession(r, n), await r.flushData(), this.updateStatus("Printing..."), a = 85, this.emitPrintProgress("printing", a, s.length, s.length), await r.waitForPrintComplete(2e4, h), this.assertActiveSession(r, n), this.updateStatus("Print completed"), this.emitPrintProgress("completed", 100, s.length, s.length), await this.getStatus();
+    } catch (h) {
+      const u = Y(h);
+      throw this.updateStatus(`Error: ${u.message}`), this.emitPrintProgress(
+        u.code === "cancelled" ? "cancelled" : "failed",
+        a
+      ), this.eventEmitter.emit({ type: "error", error: u }), u;
+    } finally {
+      this.activePrintToken === c && (this.activePrintToken = null, this.state.setPrinting(!1));
+    }
+  }
+  assertConnectionSession(t) {
+    if (this.connectionGeneration !== t || !this.connection || this.disconnectRequested)
+      throw new D("cancelled", "The printer connection changed during setup", {
+        recoverable: !0
+      });
+  }
+  assertActiveSession(t, i) {
+    if (this.printer !== t || this.connectionGeneration !== i || !this.state.isConnected)
+      throw new D("cancelled", "The printer connection changed during the print job", { recoverable: !0 });
   }
   /**
    * Disconnect from printer
    */
   async disconnect() {
-    if (this.connection?.notifyCharacteristic)
+    if (this.disconnectRequested = !0, this.connectPromise)
       try {
-        await this.connection.notifyCharacteristic.stopNotifications();
-      } catch (t) {
-        console.warn("Error stopping notifications:", t);
+        await this.connectPromise;
+      } catch {
       }
-    if (this.connection)
+    if (this.state.isPrinting)
+      throw new D(
+        "busy",
+        "Cannot disconnect while a print job is running",
+        { recoverable: !0 }
+      );
+    await this.cleanupConnection(), this.state.reset(), this.updateStatus("Printer disconnected"), this.eventEmitter.emit({ type: "disconnected" });
+  }
+  async cleanupConnection() {
+    this.connectionGeneration += 1, this.activePrintToken = null;
+    const t = this.connection, i = this.notificationListener, r = this.connectionDisconnectUnsubscribe;
+    if (this.notificationListener = null, this.connectionDisconnectUnsubscribe = null, this.connection = null, r?.(), t?.notifyCharacteristic && i)
       try {
-        await this.connection.disconnect();
-      } catch (t) {
-        console.warn("Error disconnecting:", t);
+        t.notifyCharacteristic.removeEventListener(
+          "characteristicvaluechanged",
+          i
+        );
+      } catch (n) {
+        console.warn("Error removing notifications:", n);
       }
-    this.printer = null, this.connection = null, this.device = null, this.state.reset(), this.updateStatus("Printer disconnected"), this.eventEmitter.emit({ type: "disconnected" });
+    if (t?.notifyCharacteristic)
+      try {
+        await t.notifyCharacteristic.stopNotifications();
+      } catch (n) {
+        console.warn("Error stopping notifications:", n);
+      }
+    if (t)
+      try {
+        await t.disconnect();
+      } catch (n) {
+        console.warn("Error disconnecting:", n);
+      }
+    this.printer?.dispose(), this.printer = null, this.device = null;
   }
   /**
    * Dispose of the client and clean up resources
    */
-  dispose() {
-    this.disconnect(), this.eventEmitter.clear();
+  async dispose() {
+    if (this.disconnectRequested = !0, this.connectPromise)
+      try {
+        await this.connectPromise;
+      } catch {
+      }
+    this.state.isPrinting || this.activePrintPromise ? (await this.cleanupConnection(), this.state.reset()) : await this.disconnect(), this.activePrintPromise && await Promise.race([
+      this.activePrintPromise.catch(() => {
+      }),
+      new Promise((t) => setTimeout(t, 5e3))
+    ]), this.eventEmitter.clear();
   }
 }
-const u = {
+const we = [
+  {
+    id: "mxw01-continuous-white",
+    name: "Vit · kontinuerlig",
+    kind: "continuous",
+    color: "white",
+    widthDots: 384,
+    heightDots: 240,
+    gapDots: 0,
+    widthMm: 58
+  },
+  {
+    id: "mxw01-die-cut-white",
+    name: "Vit · stansad 58 × 30 mm",
+    kind: "die-cut",
+    color: "white",
+    widthDots: 384,
+    heightDots: 200,
+    gapDots: 8,
+    widthMm: 58,
+    heightMm: 30
+  },
+  {
+    id: "mxw01-die-cut-yellow",
+    name: "Gul · stansad 58 × 30 mm",
+    kind: "die-cut",
+    color: "yellow",
+    widthDots: 384,
+    heightDots: 200,
+    gapDots: 8,
+    widthMm: 58,
+    heightMm: 30
+  },
+  {
+    id: "mxw01-die-cut-blue",
+    name: "Blå · stansad 58 × 30 mm",
+    kind: "die-cut",
+    color: "blue",
+    widthDots: 384,
+    heightDots: 200,
+    gapDots: 8,
+    widthMm: 58,
+    heightMm: 30
+  },
+  {
+    id: "mxw01-die-cut-pink",
+    name: "Rosa · stansad 58 × 30 mm",
+    kind: "die-cut",
+    color: "pink",
+    widthDots: 384,
+    heightDots: 200,
+    gapDots: 8,
+    widthMm: 58,
+    heightMm: 30
+  },
+  {
+    id: "mxw01-die-cut-green",
+    name: "Grön · stansad 58 × 30 mm",
+    kind: "die-cut",
+    color: "green",
+    widthDots: 384,
+    heightDots: 200,
+    gapDots: 8,
+    widthMm: 58,
+    heightMm: 30
+  },
+  {
+    id: "mxw01-die-cut-orange",
+    name: "Orange · stansad 58 × 30 mm",
+    kind: "die-cut",
+    color: "orange",
+    widthDots: 384,
+    heightDots: 200,
+    gapDots: 8,
+    widthMm: 58,
+    heightMm: 30
+  },
+  {
+    id: "mxw01-die-cut-red",
+    name: "Röd · stansad 58 × 30 mm",
+    kind: "die-cut",
+    color: "red",
+    widthDots: 384,
+    heightDots: 200,
+    gapDots: 8,
+    widthMm: 58,
+    heightMm: 30
+  }
+];
+function ye(e) {
+  return we.find((t) => t.id === e);
+}
+function Xi(e) {
+  return {
+    kind: e.kind,
+    color: e.color,
+    labelHeightDots: e.heightDots,
+    gapDots: e.gapDots,
+    profileId: e.id
+  };
+}
+const ve = "mxw01.print-document", xe = 1, L = 4096, Et = 2e6, Pt = 256, Me = 128, Z = 2048, lt = 1e6, De = lt * 4, St = 32, et = 256, At = 64, Ee = 256, Pe = [
+  "white",
+  "yellow",
+  "blue",
+  "pink",
+  "green",
+  "orange",
+  "red",
+  "transparent"
+], mt = [
+  "mxw-vector",
+  "mxw-5x7",
+  "mxw-mono",
+  "mxw-condensed",
+  "mxw-wide",
+  "mxw-bold",
+  "mxw-proportional",
+  "mxw-serif",
+  "mxw-rounded"
+], Se = ["solid", "double", "dashed", "dotted", "rounded"], Ae = [
+  "fa-star",
+  "fa-heart",
+  "fa-check",
+  "fa-xmark",
+  "fa-print",
+  "fa-camera",
+  "fa-image",
+  "fa-ticket",
+  "fa-tag",
+  "fa-circle-info",
+  "fa-triangle-exclamation",
+  "fa-bell",
+  "fa-user",
+  "fa-calendar-check",
+  "fa-barcode",
+  "fa-qrcode"
+];
+function P(e) {
+  return typeof e == "object" && e !== null && !Array.isArray(e);
+}
+function v(e) {
+  return typeof e == "number" && Number.isFinite(e) && Number.isInteger(e);
+}
+function ke(e) {
+  if (e.length === 0 || e.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(e))
+    return null;
+  const t = e.endsWith("==") ? 2 : e.endsWith("=") ? 1 : 0;
+  return Math.floor(e.length * 3 / 4) - t;
+}
+function zt(e) {
+  let t = 0;
+  for (let i = 0; i < e.length; i += 1) {
+    const r = Number(e[i]);
+    t += i % 2 === 0 ? r : r * 3;
+  }
+  return (10 - t % 10) % 10;
+}
+function Re(e) {
+  if (!/^\d{12,13}$/.test(e))
+    return !1;
+  const t = e.slice(0, 12);
+  return e.length === 12 || Number(e[12]) === zt(t);
+}
+function Ce(e) {
+  if (!/^\d{11,12}$/.test(e))
+    return !1;
+  const t = e.slice(0, 11);
+  return e.length === 11 || Number(e[11]) === zt(`0${t}`);
+}
+function p(e, t, i, r, n) {
+  e.push({ severity: t, code: i, message: r, ...n ? { nodeId: n } : {} });
+}
+function ut(e) {
+  if (Array.isArray(e))
+    return e.map((t) => ut(t));
+  if (P(e))
+    return Object.fromEntries(
+      Object.keys(e).sort().filter((t) => e[t] !== void 0).map((t) => [t, ut(e[t])])
+    );
+  if (typeof e == "number") {
+    if (!Number.isFinite(e)) throw new Error("Fingerprint input must contain only finite numbers.");
+    return Object.is(e, -0) ? 0 : e;
+  }
+  return e;
+}
+function Te(e) {
+  const t = JSON.stringify(ut(e)), i = new TextEncoder().encode(t);
+  let r = 2166136261;
+  for (const n of i)
+    r ^= n, r = Math.imul(r, 16777619);
+  return `fnv1a32-${(r >>> 0).toString(16).padStart(8, "0")}`;
+}
+function qt(e) {
+  const t = [];
+  if (!P(e))
+    return [
+      {
+        severity: "error",
+        code: "document.type",
+        message: "Document must be an object."
+      }
+    ];
+  const i = e;
+  i.schema !== ve && p(
+    t,
+    "error",
+    "document.schema",
+    `Unsupported document schema: ${String(i.schema)}`
+  ), i.version !== xe && p(
+    t,
+    "error",
+    "document.version",
+    `Unsupported document version: ${String(i.version)}`
+  );
+  const r = i.page;
+  (!P(r) || !v(r.widthDots) || !v(r.heightDots) || r.widthDots <= 0 || r.heightDots <= 0 || r.widthDots > L || r.heightDots > L || r.widthDots * r.heightDots > Et) && p(
+    t,
+    "error",
+    "document.page-size",
+    `Page dimensions must be positive finite integers no larger than ${L} dots.`
+  );
+  const n = P(r) ? r.margins : void 0, s = P(r) && v(r.widthDots) && v(r.heightDots) && r.widthDots > 0 && r.heightDots > 0;
+  (!P(n) || !("top" in n) || !("right" in n) || !("bottom" in n) || !("left" in n) || !v(n.top) || !v(n.right) || !v(n.bottom) || !v(n.left) || n.top < 0 || n.right < 0 || n.bottom < 0 || n.left < 0 || s && n.left + n.right >= r.widthDots || s && n.top + n.bottom >= r.heightDots) && p(
+    t,
+    "error",
+    "document.page-margins",
+    "Page margins must be non-negative finite integers inside the page."
+  );
+  const o = P(r) ? r.media : void 0;
+  o !== void 0 && (P(o) ? Oe(
+    o,
+    t,
+    s ? { widthDots: r.widthDots, heightDots: r.heightDots } : void 0
+  ) : p(t, "error", "document.media", "Document media must be an object."));
+  const a = P(r) ? r.frame : void 0;
+  if (a !== void 0 && (P(a) ? $e(
+    a,
+    t,
+    s ? { widthDots: r.widthDots, heightDots: r.heightDots } : void 0
+  ) : p(t, "error", "document.frame", "Document frame must be an object.")), P(i.metadata)) {
+    const l = Object.entries(i.metadata);
+    l.length > St && p(
+      t,
+      "error",
+      "document.metadata",
+      `Document metadata may contain at most ${St} entries.`
+    );
+    for (const [f, y] of l)
+      if (f.length > et || typeof y != "string" || y.length > et) {
+        p(
+          t,
+          "error",
+          "document.metadata",
+          `Metadata keys and values must be strings no longer than ${et} characters.`
+        );
+        break;
+      }
+  } else i.metadata !== void 0 && p(
+    t,
+    "error",
+    "document.metadata",
+    "Document metadata must be a string map."
+  );
+  if (!Array.isArray(i.nodes))
+    return p(t, "error", "document.nodes", "Document nodes must be an array."), t;
+  i.nodes.length > Pt && p(
+    t,
+    "error",
+    "document.node-count",
+    `A document may contain at most ${Pt} nodes.`
+  );
+  const c = /* @__PURE__ */ new Set(), h = P(r) && v(r.widthDots) && v(r.heightDots) && r.widthDots > 0 && r.heightDots > 0, u = h && P(n) && v(n.top) && v(n.right) && v(n.bottom) && v(n.left) ? {
+    left: n.left,
+    top: n.top,
+    right: r.widthDots - n.right,
+    bottom: r.heightDots - n.bottom
+  } : null;
+  for (const l of i.nodes) {
+    if (!P(l)) {
+      p(
+        t,
+        "error",
+        "document.node-size",
+        "A document node has an invalid dimension or id."
+      );
+      continue;
+    }
+    const f = typeof l.id == "string" ? l.id : void 0;
+    if (!f || f.length > Me || !v(l.x) || !v(l.y) || !v(l.width) || !v(l.height) || l.width <= 0 || l.height <= 0 || l.width > L || l.height > L || l.width * l.height > Et) {
+      p(
+        t,
+        "error",
+        "document.node-size",
+        `A document node must have a non-empty id and positive finite integer dimensions no larger than ${L} dots.`,
+        f
+      );
+      continue;
+    }
+    switch (c.has(f) && p(
+      t,
+      "error",
+      "document.duplicate-node-id",
+      `Node id "${f}" is used more than once.`,
+      f
+    ), c.add(f), l.rotation !== void 0 && ![0, 90, 180, 270].includes(l.rotation) && p(
+      t,
+      "error",
+      "document.rotation",
+      "Node rotation must be 0, 90, 180 or 270 degrees.",
+      f
+    ), h && (l.x < 0 || l.y < 0 || l.x + l.width > r.widthDots || l.y + l.height > r.heightDots) && p(
+      t,
+      "error",
+      "document.node-out-of-bounds",
+      "Node extends beyond the printable page.",
+      f
+    ), u && (l.x < u.left || l.y < u.top || l.x + l.width > u.right || l.y + l.height > u.bottom) && p(
+      t,
+      "warning",
+      "document.node-outside-margins",
+      "Node extends into the configured page margins.",
+      f
+    ), l.kind) {
+      case "text":
+        _e(l, t, f);
+        break;
+      case "image":
+        Ie(l, t, f);
+        break;
+      case "rule":
+        Ne(l, t, f);
+        break;
+      case "barcode":
+        Le(l, t, f);
+        break;
+      case "qr":
+        He(l, t, f);
+        break;
+      case "checklist":
+        ze(l, t, f);
+        break;
+      case "fortune":
+        qe(l, t, f);
+        break;
+      case "icon":
+        Be(l, t, f);
+        break;
+      default:
+        p(
+          t,
+          "error",
+          "document.node-kind",
+          `Unsupported node kind: ${String(l.kind)}`,
+          f
+        );
+    }
+  }
+  return t;
+}
+function _e(e, t, i) {
+  typeof e.text != "string" || e.text.length > Z ? p(
+    t,
+    "error",
+    "document.text",
+    `Text must be a string no longer than ${Z} characters.`,
+    i
+  ) : e.text.length === 0 && p(t, "warning", "document.text-empty", "Text node is empty.", i), e.autoHeight !== void 0 && typeof e.autoHeight != "boolean" && p(t, "error", "document.text-auto-height", "autoHeight must be boolean.", i), e.fontFamily !== void 0 && typeof e.fontFamily != "string" ? p(t, "error", "document.text-font", "fontFamily must be a string.", i) : typeof e.fontFamily == "string" && e.fontFamily.length > 64 ? p(t, "error", "document.text-font", "fontFamily is too long.", i) : e.fontFamily && p(
+    t,
+    "warning",
+    "document.font-family-ignored",
+    "The deterministic renderer uses its built-in 5x7 font; fontFamily is ignored.",
+    i
+  ), e.fontId !== void 0 && !mt.includes(e.fontId) && p(
+    t,
+    "error",
+    "document.text-font-id",
+    `Unsupported fontId: ${String(e.fontId)}.`,
+    i
+  ), e.fontSizeDots !== void 0 && (!v(e.fontSizeDots) || e.fontSizeDots < 1 || e.fontSizeDots > 16) && p(t, "error", "document.text-font-size", "fontSizeDots must be an integer from 1 to 16.", i), e.lineHeightDots !== void 0 && (!v(e.lineHeightDots) || e.lineHeightDots < 1 || e.lineHeightDots > 128) && p(t, "error", "document.text-line-height", "lineHeightDots must be an integer from 1 to 128.", i), e.fontWeight !== void 0 && e.fontWeight !== "normal" && e.fontWeight !== "bold" && p(t, "error", "document.text-font-weight", "fontWeight must be normal or bold.", i), e.align !== void 0 && e.align !== "left" && e.align !== "center" && e.align !== "right" && p(t, "error", "document.text-align", "align must be left, center or right.", i);
+}
+function Ie(e, t, i) {
+  if (!P(e.image)) {
+    p(t, "error", "document.image", "Image data must be an object.", i);
+    return;
+  }
+  const r = e.image;
+  if ((!v(r.width) || !v(r.height) || r.width <= 0 || r.height <= 0 || r.width * r.height > lt) && p(t, "error", "document.image-size", `Image dimensions must be positive integers within ${lt} pixels.`, i), typeof r.dataBase64 != "string") {
+    p(t, "error", "document.image-data", "Image dataBase64 must be a base64 string.", i);
+    return;
+  }
+  const n = ke(r.dataBase64);
+  n === null || n > De ? p(t, "error", "document.image-data", "Image dataBase64 is invalid or too large.", i) : v(r.width) && v(r.height) && n !== r.width * r.height * 4 && p(t, "error", "document.image-data", `RGBA image data must contain ${r.width * r.height * 4} bytes, got ${n}.`, i);
+}
+function Ne(e, t, i) {
+  e.thicknessDots !== void 0 && (!v(e.thicknessDots) || e.thicknessDots < 1 || e.thicknessDots > 64) && p(t, "error", "document.rule-thickness", "thicknessDots must be an integer from 1 to 64.", i);
+}
+function Le(e, t, i) {
+  e.format !== "code128" && e.format !== "ean13" && e.format !== "upca" && p(t, "error", "document.barcode-format", "Unsupported barcode format.", i), typeof e.value != "string" || e.value.length === 0 || e.value.length > 256 ? p(t, "error", "document.barcode-value", "Barcode value must be a non-empty string no longer than 256 characters.", i) : e.format === "code128" && [...e.value].some((r) => r.charCodeAt(0) < 32 || r.charCodeAt(0) > 126) ? p(t, "error", "document.barcode-value", "Code 128 supports printable ASCII only.", i) : e.format === "ean13" && !Re(e.value) ? p(t, "error", "document.barcode-value", "EAN-13 must contain 12 digits or 13 digits with a valid checksum.", i) : e.format === "upca" && !Ce(e.value) && p(t, "error", "document.barcode-value", "UPC-A must contain 11 digits or 12 digits with a valid checksum.", i), e.showText !== void 0 && typeof e.showText != "boolean" && p(t, "error", "document.barcode-show-text", "showText must be boolean.", i);
+}
+function He(e, t, i) {
+  typeof e.value != "string" || e.value.length === 0 ? p(t, "error", "document.qr-value", "QR value must be a non-empty string.", i) : new TextEncoder().encode(e.value).length > 17 && p(t, "error", "document.qr-value", "QR renderer v1 supports at most 17 UTF-8 bytes.", i), e.errorCorrection !== void 0 && e.errorCorrection !== "low" && p(t, "error", "document.qr-error-correction", "QR renderer v1 supports low error correction only.", i);
+}
+function Oe(e, t, i) {
+  e.kind !== "continuous" && e.kind !== "die-cut" && e.kind !== "black-mark" && p(t, "error", "document.media-kind", "Unsupported media kind."), Pe.includes(e.color) || p(t, "error", "document.media-color", "Unsupported media color.");
+  for (const r of ["labelHeightDots", "gapDots"])
+    e[r] !== void 0 && (!v(e[r]) || e[r] < 0 || e[r] > L) && p(t, "error", "document.media-dimensions", `${r} must be a non-negative integer within the page limits.`);
+  if (e.kind === "die-cut" && typeof e.labelHeightDots == "number" && e.labelHeightDots <= 0 && p(t, "error", "document.media-dimensions", "Die-cut media must have a positive label height."), i && v(e.labelHeightDots) && e.labelHeightDots !== i.heightDots && p(t, "error", "document.media-height-mismatch", "Media labelHeightDots must match page heightDots."), e.kind === "black-mark" && p(
+    t,
+    "error",
+    "document.media-black-mark-unsupported",
+    "Black-mark media requires a calibrated mark sensor and is not supported by the current MXW01 transport."
+  ), e.kind === "die-cut" && e.profileId === void 0 && p(t, "error", "document.media-profile-required", "Die-cut media must select a known media profile before printing."), e.kind === "die-cut" && v(e.gapDots) && e.gapDots > 0 && p(
+    t,
+    "error",
+    "document.media-gap-unsupported",
+    "Die-cut media gaps are metadata only until a calibrated feed operation is implemented; physical printing is blocked."
+  ), e.profileId !== void 0 && (typeof e.profileId != "string" || e.profileId.length > 128) && p(t, "error", "document.media-profile", "Media profile id must be a short string."), typeof e.profileId == "string") {
+    const r = ye(e.profileId);
+    r ? ((r.kind !== e.kind || r.color !== e.color) && p(t, "error", "document.media-profile-mismatch", "Media profile kind and color do not match the document media."), i && r.widthDots !== i.widthDots && p(t, "error", "document.media-profile-width", "Media profile width does not match page width."), r.kind !== "continuous" && i && r.heightDots !== i.heightDots && p(t, "error", "document.media-profile-height", "Media profile height does not match page height."), v(e.gapDots) && r.kind !== "continuous" && e.gapDots !== r.gapDots && p(t, "error", "document.media-profile-gap", "Media profile gap does not match the selected profile.")) : p(t, "error", "document.media-profile-unknown", `Unknown media profile id: ${e.profileId}.`);
+  }
+}
+function $e(e, t, i) {
+  (!v(e.insetDots) || e.insetDots < 0 || e.insetDots > L) && p(t, "error", "document.frame-inset", "Frame inset must be a non-negative integer."), (!v(e.thicknessDots) || e.thicknessDots < 1 || e.thicknessDots > 64) && p(t, "error", "document.frame-thickness", "Frame thickness must be an integer from 1 to 64."), e.style !== void 0 && (typeof e.style != "string" || !Se.includes(e.style)) && p(t, "error", "document.frame-style", `Unsupported frame style: ${String(e.style)}.`), i && v(e.insetDots) && v(e.thicknessDots) && 2 * (e.insetDots + e.thicknessDots) >= Math.min(i.widthDots, i.heightDots) && p(
+    t,
+    "error",
+    "document.frame-out-of-bounds",
+    "Frame inset and thickness must leave at least one printable dot inside the frame."
+  );
+}
+function ze(e, t, i) {
+  if (!Array.isArray(e.items) || e.items.length === 0 || e.items.length > At) {
+    p(t, "error", "document.checklist-items", `Checklist must contain 1–${At} items.`, i);
+    return;
+  }
+  for (const r of e.items) {
+    if (!P(r) || typeof r.text != "string" || r.text.length > Ee) {
+      p(t, "error", "document.checklist-item", "Checklist item text is invalid or too long.", i);
+      break;
+    }
+    if (r.checked !== void 0 && typeof r.checked != "boolean") {
+      p(t, "error", "document.checklist-item", "Checklist item checked must be boolean.", i);
+      break;
+    }
+  }
+  e.autoHeight !== void 0 && typeof e.autoHeight != "boolean" && p(t, "error", "document.checklist-auto-height", "autoHeight must be boolean.", i), e.itemHeightDots !== void 0 && (!v(e.itemHeightDots) || e.itemHeightDots < 8 || e.itemHeightDots > 128) && p(t, "error", "document.checklist-height", "Checklist item height must be an integer from 8 to 128.", i), e.fontId !== void 0 && !mt.includes(e.fontId) && p(t, "error", "document.checklist-font-id", `Unsupported fontId: ${String(e.fontId)}.`, i), e.fontSizeDots !== void 0 && (!v(e.fontSizeDots) || e.fontSizeDots < 1 || e.fontSizeDots > 16) && p(t, "error", "document.checklist-font-size", "fontSizeDots must be an integer from 1 to 16.", i);
+}
+function qe(e, t, i) {
+  (typeof e.text != "string" || e.text.length === 0 || e.text.length > Z) && p(t, "error", "document.fortune-text", `Fortune text must be 1–${Z} characters.`, i), e.autoHeight !== void 0 && typeof e.autoHeight != "boolean" && p(t, "error", "document.fortune-auto-height", "autoHeight must be boolean.", i), e.fontId !== void 0 && !mt.includes(e.fontId) && p(t, "error", "document.fortune-font-id", `Unsupported fontId: ${String(e.fontId)}.`, i), e.fontSizeDots !== void 0 && (!v(e.fontSizeDots) || e.fontSizeDots < 1 || e.fontSizeDots > 16) && p(t, "error", "document.fortune-font-size", "fontSizeDots must be an integer from 1 to 16.", i), e.align !== void 0 && e.align !== "left" && e.align !== "center" && e.align !== "right" && p(t, "error", "document.fortune-align", "align must be left, center or right.", i);
+}
+function Be(e, t, i) {
+  (typeof e.iconId != "string" || !Ae.includes(e.iconId)) && p(
+    t,
+    "error",
+    "document.icon-id",
+    `Unsupported Font Awesome icon: ${String(e.iconId)}.`,
+    i
+  );
+}
+function m(...e) {
+  return e;
+}
+function b(e, t, i = []) {
+  return { width: e, strokes: t, dots: i };
+}
+const F = {
+  " ": b(3, []),
+  "!": b(2, [m([1, 0.4], [1, 5.2])], [[1, 6.35]]),
+  "#": b(5, [m([1.5, 0], [1.5, 7]), m([3.5, 0], [3.5, 7]), m([0, 2.2], [5, 2.2]), m([0, 4.8], [5, 4.8])]),
+  "%": b(5, [m([0.2, 6.8], [4.8, 0.2])], [[1.1, 1.2], [3.9, 5.8]]),
+  "&": b(5, [m([4.8, 6.8], [1.3, 3.8], [0.5, 2.6], [0.7, 1.1], [1.8, 0.2], [2.9, 0.7], [3, 1.7], [2.3, 2.8], [1, 4], [0.6, 5.4], [1.5, 6.7], [3.1, 6.9], [4.8, 5.3])]),
+  "(": b(3, [m([2.5, 0], [1.3, 1], [0.7, 2.4], [0.7, 4.6], [1.3, 6], [2.5, 7])]),
+  ")": b(3, [m([0.5, 0], [1.7, 1], [2.3, 2.4], [2.3, 4.6], [1.7, 6], [0.5, 7])]),
+  "[": b(3, [m([2.5, 0], [0.7, 0], [0.7, 7], [2.5, 7])]),
+  "]": b(3, [m([0.5, 0], [2.3, 0], [2.3, 7], [0.5, 7])]),
+  "*": b(5, [m([2.5, 1], [2.5, 6]), m([0.5, 2], [4.5, 5]), m([4.5, 2], [0.5, 5])]),
+  "+": b(5, [m([2.5, 1], [2.5, 6]), m([0.5, 3.5], [4.5, 3.5])]),
+  ",": b(2, [m([1.1, 6], [0.5, 7])]),
+  "-": b(4, [m([0.5, 3.5], [3.5, 3.5])]),
+  ".": b(2, [], [[1, 6.35]]),
+  "/": b(5, [m([0.3, 7], [4.7, 0])]),
+  "?": b(5, [m([0.4, 1.5], [0.9, 0.5], [2.1, 0], [3.8, 0.3], [4.6, 1.4], [4.3, 2.5], [3, 3.5], [2.5, 4.3], [2.5, 5])], [[2.5, 6.35]]),
+  0: b(5, [m([2.5, 0], [1.1, 0.4], [0.4, 1.5], [0.4, 5.5], [1.1, 6.6], [2.5, 7], [3.9, 6.6], [4.6, 5.5], [4.6, 1.5], [3.9, 0.4], [2.5, 0])]),
+  1: b(3, [m([0.5, 1.5], [2, 0], [2, 7]), m([0.7, 7], [3.3, 7])]),
+  2: b(5, [m([0.4, 1.4], [1, 0.4], [2.4, 0], [4, 0.4], [4.6, 1.5], [4.2, 2.5], [0.5, 7], [4.8, 7])]),
+  3: b(5, [m([0.5, 0.7], [1.5, 0], [3.6, 0.1], [4.6, 1.1], [4.3, 2.4], [3.2, 3.4], [4.3, 4.1], [4.7, 5.4], [3.7, 6.8], [1.6, 7], [0.5, 6.3]), m([2.6, 3.5], [3.4, 3.5])]),
+  4: b(5, [m([3.7, 7], [3.7, 0], [0.3, 4.5], [4.7, 4.5])]),
+  5: b(5, [m([4.6, 0], [0.7, 0], [0.5, 3.3], [2.9, 3.1], [4.3, 3.8], [4.7, 5.2], [4, 6.6], [2.6, 7], [1, 6.6], [0.4, 5.8])]),
+  6: b(5, [m([4.4, 0.8], [3.2, 0], [1.4, 0.5], [0.4, 2.1], [0.4, 5.2], [1.2, 6.6], [2.8, 7], [4.2, 6.2], [4.6, 4.8], [3.7, 3.6], [2.3, 3.3], [0.5, 4])]),
+  7: b(5, [m([0.4, 0], [4.7, 0], [2, 7])]),
+  8: b(5, [m([2.5, 0], [1, 0.5], [0.5, 1.6], [1, 3.4], [2.5, 3.5], [4, 3.4], [4.5, 1.6], [4, 0.5], [2.5, 0]), m([2.5, 3.5], [1, 3.7], [0.5, 5.5], [1.2, 6.6], [2.5, 7], [3.8, 6.6], [4.5, 5.5], [4, 3.7], [2.5, 3.5])]),
+  9: b(5, [m([4.5, 3.5], [3.2, 3.7], [1.7, 3.4], [0.5, 2.2], [0.7, 0.8], [2, 0], [3.6, 0.5], [4.5, 1.8], [4.5, 5.2], [3.5, 6.6], [1.8, 7], [0.7, 6.4])]),
+  ":": b(2, [], [[1, 2.2], [1, 6.2]]),
+  ";": b(2, [m([1, 6.1], [0.5, 7])], [[1, 2.2]]),
+  "=": b(5, [m([0.5, 2.4], [4.5, 2.4]), m([0.5, 4.7], [4.5, 4.7])]),
+  _: b(5, [m([0, 7], [5, 7])]),
+  A: b(5, [m([0.4, 7], [2.5, 0], [4.6, 7]), m([1.2, 4.4], [3.8, 4.4])]),
+  B: b(5, [m([0.5, 7], [0.5, 0], [3.1, 0], [4.5, 0.8], [4.5, 2.1], [3.2, 3.5], [0.5, 3.5]), m([3.2, 3.5], [4.5, 4.3], [4.5, 6.1], [3.1, 7], [0.5, 7])]),
+  C: b(5, [m([4.7, 1], [3.5, 0.2], [1.8, 0], [0.5, 1.4], [0.5, 5.6], [1.8, 7], [3.5, 6.8], [4.7, 6])]),
+  D: b(5, [m([0.5, 7], [0.5, 0], [2.6, 0], [4.6, 1.2], [4.6, 5.8], [2.6, 7], [0.5, 7])]),
+  E: b(5, [m([4.7, 0], [0.5, 0], [0.5, 7], [4.7, 7]), m([0.5, 3.5], [3.7, 3.5])]),
+  F: b(5, [m([0.5, 7], [0.5, 0], [4.7, 0]), m([0.5, 3.4], [3.7, 3.4])]),
+  G: b(5, [m([4.7, 1], [3.5, 0.2], [1.8, 0], [0.5, 1.4], [0.5, 5.6], [1.8, 7], [3.5, 6.8], [4.7, 5.8], [4.7, 4], [2.7, 4])]),
+  H: b(5, [m([0.5, 0], [0.5, 7]), m([4.5, 0], [4.5, 7]), m([0.5, 3.5], [4.5, 3.5])]),
+  I: b(3, [m([0.3, 0], [2.7, 0]), m([1.5, 0], [1.5, 7]), m([0.3, 7], [2.7, 7])]),
+  J: b(5, [m([0.5, 0], [4.5, 0]), m([3.8, 0], [3.8, 5.5], [3, 6.7], [1.7, 7], [0.5, 6.2])]),
+  K: b(5, [m([0.5, 0], [0.5, 7]), m([4.6, 0], [0.5, 3.5], [4.7, 7])]),
+  L: b(5, [m([0.5, 0], [0.5, 7], [4.7, 7])]),
+  M: b(5, [m([0.5, 7], [0.5, 0], [2.5, 3.2], [4.5, 0], [4.5, 7])]),
+  N: b(5, [m([0.5, 7], [0.5, 0], [4.5, 7], [4.5, 0])]),
+  O: b(5, [m([2.5, 0], [1.2, 0.3], [0.5, 1.5], [0.5, 5.5], [1.2, 6.7], [2.5, 7], [3.8, 6.7], [4.5, 5.5], [4.5, 1.5], [3.8, 0.3], [2.5, 0])]),
+  P: b(5, [m([0.5, 7], [0.5, 0], [3, 0], [4.5, 0.8], [4.5, 2.5], [3, 3.5], [0.5, 3.5])]),
+  Q: b(5, [m([2.5, 0], [1.2, 0.3], [0.5, 1.5], [0.5, 5.5], [1.2, 6.7], [2.5, 7], [3.8, 6.7], [4.5, 5.5], [4.5, 1.5], [3.8, 0.3], [2.5, 0]), m([3.2, 5.4], [4.8, 7])]),
+  R: b(5, [m([0.5, 7], [0.5, 0], [3, 0], [4.5, 0.8], [4.5, 2.5], [3, 3.5], [0.5, 3.5]), m([2.8, 3.5], [4.7, 7])]),
+  S: b(5, [m([4.5, 0.8], [3.5, 0.1], [1.5, 0], [0.5, 1.1], [0.8, 2.5], [2.2, 3.2], [3.8, 3.8], [4.6, 4.8], [4.2, 6.2], [3, 7], [1.4, 6.9], [0.4, 6.2])]),
+  T: b(5, [m([0.3, 0], [4.7, 0]), m([2.5, 0], [2.5, 7])]),
+  U: b(5, [m([0.5, 0], [0.5, 5.3], [1.4, 6.7], [2.5, 7], [3.6, 6.7], [4.5, 5.3], [4.5, 0])]),
+  V: b(5, [m([0.4, 0], [2.5, 7], [4.6, 0])]),
+  W: b(5, [m([0.3, 0], [1.4, 7], [2.5, 3.6], [3.6, 7], [4.7, 0])]),
+  X: b(5, [m([0.5, 0], [4.5, 7]), m([4.5, 0], [0.5, 7])]),
+  Y: b(5, [m([0.4, 0], [2.5, 3.3], [4.6, 0]), m([2.5, 3.3], [2.5, 7])]),
+  Z: b(5, [m([0.4, 0], [4.6, 0], [0.4, 7], [4.6, 7])])
+};
+function W(e, t) {
+  const i = e.strokes.map((r) => r.map(([n, s]) => [n, s * 0.82 + 1]));
+  return b(e.width, i, t);
+}
+const J = {
+  ...F,
+  Ä: W(F.A, [[1.6, 0.25], [3.4, 0.25]]),
+  Å: W(F.A, [[2.5, 0.2]]),
+  É: W(F.E, [[3.7, 0.15], [4.2, 0.15]]),
+  Ö: W(F.O, [[1.6, 0.25], [3.4, 0.25]]),
+  "·": b(2, [], [[1, 3.5]])
+}, Fe = 4e3, Ue = 12;
+function Ge(e) {
+  return e.page.media?.kind === void 0 || e.page.media.kind === "continuous";
+}
+function Ve(e, t) {
+  if (e === "mxw-condensed") return 4;
+  if (e === "mxw-wide") return 11;
+  if (e === "mxw-5x7") return 6;
+  const i = J[t.toUpperCase()] ?? J["?"];
+  return e === "mxw-proportional" ? Math.ceil(i.width) + 1 : 6;
+}
+function ft(e, t, i) {
+  const r = [...e];
+  return r.length === 0 ? 0 : r.reduce(
+    (n, s, o) => n + Ve(t, s) * i - (o === r.length - 1 ? i : 0),
+    0
+  );
+}
+function je(e, t, i, r) {
+  const n = [];
+  let s = "";
+  for (const o of [...e]) {
+    const a = `${s}${o}`;
+    s && ft(a, i, r) > t ? (n.push(s), s = o) : s = a;
+  }
+  return (s || n.length === 0) && n.push(s), n;
+}
+function Xe(e, t, i, r) {
+  if (e.length === 0) return 1;
+  const n = e.match(/\s+|\S+/gu) ?? [e];
+  let s = 0, o = "";
+  for (const a of n) {
+    const c = `${o}${a}`;
+    if (o && ft(c, i, r) > t ? (s += 1, o = a.replace(/^\s+/u, "")) : o = c, ft(o, i, r) > t) {
+      const h = je(o, t, i, r);
+      s += Math.max(0, h.length - 1), o = h[h.length - 1] ?? "";
+    }
+  }
+  return s + 1;
+}
+function Bt(e) {
+  const t = Math.max(1, Math.trunc(Number(e.fontSizeDots) || 1)), i = e.fontId ?? "mxw-vector", r = Math.max(1, Math.trunc(Number(e.lineHeightDots) || 8 * t)), n = Math.max(1, Math.trunc(Number(e.width) || 1)), s = String(e.text ?? "").split(`
+`).reduce((o, a) => o + Xe(a, n, i, t), 0);
+  return Math.max(1, 7 * t + Math.max(0, s - 1) * r);
+}
+function Ye(e) {
+  const t = Math.max(1, Math.trunc(e.fontSizeDots ?? 1)), i = Math.max(8, Math.trunc(e.itemHeightDots ?? 10 * t)), r = e.items.reduce((n, s) => Math.max(n, Bt({
+    text: `${s.checked ? "[X]" : "[ ]"} ${s.text}`,
+    width: e.width,
+    fontId: e.fontId,
+    fontSizeDots: e.fontSizeDots,
+    lineHeightDots: 8 * t
+  })), i);
+  return {
+    height: Math.max(1, r * e.items.length),
+    itemHeightDots: r
+  };
+}
+function We(e, t) {
+  const i = Math.max(Ue, Number(t.margins?.bottom) || 0);
+  return Math.max(1, Math.trunc(e.y) + Math.max(1, Math.trunc(e.height)) + i);
+}
+function Qe(e, t) {
+  const i = Math.max(1, Math.min(Fe, Math.trunc(t)));
+  return {
+    ...e.page,
+    heightDots: i,
+    ...e.page.media?.kind === "continuous" ? { media: { ...e.page.media, labelHeightDots: i } } : {}
+  };
+}
+function Ft(e) {
+  if (!e || typeof e != "object" || !e.page || typeof e.page != "object" || !Array.isArray(e.nodes)) return e;
+  let t = e.page, i = !1;
+  const r = e.nodes.map((n) => {
+    if (!n || typeof n != "object") return n;
+    let s = n;
+    if ((n.kind === "text" || n.kind === "fortune") && n.autoHeight !== !1) {
+      const o = Bt(n);
+      o > n.height && (s = { ...n, height: o });
+    } else if (n.kind === "checklist" && n.autoHeight !== !1) {
+      const o = Ye(n);
+      (o.height > n.height || o.itemHeightDots !== (n.itemHeightDots ?? o.itemHeightDots)) && (s = { ...n, height: Math.max(n.height, o.height), itemHeightDots: o.itemHeightDots });
+    }
+    if (s !== n)
+      if (i = !0, Ge({ ...e, page: t })) {
+        const o = We(s, t);
+        o > t.heightDots && (t = Qe({ ...e, page: t }, o));
+      } else s.y + s.height > t.heightDots && (s = { ...s, height: Math.max(1, t.heightDots - s.y) });
+    return s;
+  });
+  return !i && t === e.page ? e : { ...e, page: t, nodes: r };
+}
+const K = {
+  "fa-star": {
+    width: 576,
+    height: 512,
+    path: "M316.9 18C311.6 7 300.4 0 288.1 0s-23.4 7-28.8 18L195 150.3 51.4 171.5c-12 1.8-22 10.2-25.7 21.7s-.7 24.2 7.9 32.7L137.8 329 113.2 474.7c-2 12 3 24.2 12.9 31.3s23 8 33.8 2.3l128.3-68.5 128.3 68.5c10.8 5.7 23.9 4.9 33.8-2.3s14.9-19.3 12.9-31.3L438.5 329 542.7 225.9c8.6-8.5 11.7-21.2 7.9-32.7s-13.7-19.9-25.7-21.7L381.2 150.3 316.9 18z"
+  },
+  "fa-heart": {
+    width: 512,
+    height: 512,
+    path: "M47.6 300.4L228.3 469.1c7.5 7 17.4 10.9 27.7 10.9s20.2-3.9 27.7-10.9L464.4 300.4c30.4-28.3 47.6-68 47.6-109.5v-5.8c0-69.9-50.5-129.5-119.4-141C347 36.5 300.6 51.4 268 84L256 96 244 84c-32.6-32.6-79-47.5-124.6-39.9C50.5 55.6 0 115.2 0 185.1v5.8c0 41.5 17.2 81.2 47.6 109.5z"
+  },
+  "fa-check": {
+    width: 448,
+    height: 512,
+    path: "M438.6 105.4c12.5 12.5 12.5 32.8 0 45.3l-256 256c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0L160 338.7 393.4 105.4c12.5-12.5 32.8-12.5 45.3 0z"
+  },
+  "fa-xmark": {
+    width: 384,
+    height: 512,
+    path: "M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"
+  },
+  "fa-print": {
+    width: 512,
+    height: 512,
+    path: "M128 0C92.7 0 64 28.7 64 64l0 96 64 0 0-96 226.7 0L384 93.3l0 66.7 64 0 0-66.7c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0L128 0zM384 352l0 32 0 64-256 0 0-64 0-16 0-16 256 0zm64 32l32 0c17.7 0 32-14.3 32-32l0-96c0-35.3-28.7-64-64-64L64 192c-35.3 0-64 28.7-64 64l0 96c0 17.7 14.3 32 32 32l32 0 0 64c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-64zM432 248a24 24 0 1 1 0 48 24 24 0 1 1 0-48z"
+  },
+  "fa-camera": {
+    width: 512,
+    height: 512,
+    path: "M149.1 64.8L138.7 96 64 96C28.7 96 0 124.7 0 160L0 416c0 35.3 28.7 64 64 64l384 0c35.3 0 64-28.7 64-64l0-256c0-35.3-28.7-64-64-64l-74.7 0L362.9 64.8C356.4 45.2 338.1 32 317.4 32L194.6 32c-20.7 0-39 13.2-45.5 32.8zM256 192a96 96 0 1 1 0 192 96 96 0 1 1 0-192z"
+  },
+  "fa-image": {
+    width: 512,
+    height: 512,
+    path: "M0 96C0 60.7 28.7 32 64 32l384 0c35.3 0 64 28.7 64 64l0 320c0 35.3-28.7 64-64 64L64 480c-35.3 0-64-28.7-64-64L0 96zM323.8 202.5c-4.5-6.6-11.9-10.5-19.8-10.5s-15.4 3.9-19.8 10.5l-87 127.6L170.7 297c-4.6-5.7-11.5-9-18.7-9s-14.2 3.3-18.7 9l-64 80c-5.8 7.2-6.9 17.1-2.9 25.4s12.4 13.6 21.6 13.6l96 0 32 0 208 0c8.9 0 17.1-4.9 21.2-12.8s3.6-17.4-1.4-24.7l-120-176zM112 192a48 48 0 1 0 0-96 48 48 0 1 0 0 96z"
+  },
+  "fa-ticket": {
+    width: 576,
+    height: 512,
+    path: "M64 64C28.7 64 0 92.7 0 128l0 64c0 8.8 7.4 15.7 15.7 18.6C34.5 217.1 48 235 48 256s-13.5 38.9-32.3 45.4C7.4 304.3 0 311.2 0 320l0 64c0 35.3 28.7 64 64 64l448 0c35.3 0 64-28.7 64-64l0-64c0-8.8-7.4-15.7-15.7-18.6C541.5 294.9 528 277 528 256s13.5-38.9 32.3-45.4c8.3-2.9 15.7-9.8 15.7-18.6l0-64c0-35.3-28.7-64-64-64L64 64zm64 112l0 160c0 8.8 7.2 16 16 16l288 0c8.8 0 16-7.2 16-16l0-160c0-8.8-7.2-16-16-16l-288 0c-8.8 0-16 7.2-16 16zM96 160c0-17.7 14.3-32 32-32l320 0c17.7 0 32 14.3 32 32l0 192c0 17.7-14.3 32-32 32l-320 0c-17.7 0-32-14.3-32-32l0-192z"
+  },
+  "fa-tag": {
+    width: 448,
+    height: 512,
+    path: "M0 80L0 229.5c0 17 6.7 33.3 18.7 45.3l176 176c25 25 65.5 25 90.5 0L418.7 317.3c25-25 25-65.5 0-90.5l-176-176c-12-12-28.3-18.7-45.3-18.7L48 32C21.5 32 0 53.5 0 80zm112 32a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"
+  },
+  "fa-circle-info": {
+    width: 512,
+    height: 512,
+    path: "M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336l24 0 0-64-24 0c-13.3 0-24-10.7-24-24s10.7-24 24-24l48 0c13.3 0 24 10.7 24 24l0 88 8 0c13.3 0 24 10.7 24 24s-10.7 24-24 24l-80 0c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"
+  },
+  "fa-triangle-exclamation": {
+    width: 512,
+    height: 512,
+    path: "M256 32c14.2 0 27.3 7.5 34.5 19.8l216 368c7.3 12.4 7.3 27.7 .2 40.1S486.3 480 472 480L40 480c-14.3 0-27.6-7.7-34.7-20.1s-7-27.8 .2-40.1l216-368C228.7 39.5 241.8 32 256 32zm0 128c-13.3 0-24 10.7-24 24l0 112c0 13.3 10.7 24 24 24s24-10.7 24-24l0-112c0-13.3-10.7-24-24-24zm32 224a32 32 0 1 0 -64 0 32 32 0 1 0 64 0z"
+  },
+  "fa-bell": {
+    width: 448,
+    height: 512,
+    path: "M224 0c-17.7 0-32 14.3-32 32l0 19.2C119 66 64 130.6 64 208l0 18.8c0 47-17.3 92.4-48.5 127.6l-7.4 8.3c-8.4 9.4-10.4 22.9-5.3 34.4S19.4 416 32 416l384 0c12.6 0 24-7.4 29.2-18.9s3.1-25-5.3-34.4l-7.4-8.3C401.3 319.2 384 273.9 384 226.8l0-18.8c0-77.4-55-142-128-156.8L256 32c0-17.7-14.3-32-32-32zm45.3 493.3c12-12 18.7-28.3 18.7-45.3l-64 0-64 0c0 17 6.7 33.3 18.7 45.3s28.3 18.7 45.3 18.7s33.3-6.7 45.3-18.7z"
+  },
+  "fa-user": {
+    width: 448,
+    height: 512,
+    path: "M224 256A128 128 0 1 0 224 0a128 128 0 1 0 0 256zm-45.7 48C79.8 304 0 383.8 0 482.3C0 498.7 13.3 512 29.7 512l388.6 0c16.4 0 29.7-13.3 29.7-29.7C448 383.8 368.2 304 269.7 304l-91.4 0z"
+  },
+  "fa-calendar-check": {
+    width: 448,
+    height: 512,
+    path: "M128 0c17.7 0 32 14.3 32 32l0 32 128 0 0-32c0-17.7 14.3-32 32-32s32 14.3 32 32l0 32 48 0c26.5 0 48 21.5 48 48l0 48L0 160l0-48C0 85.5 21.5 64 48 64l48 0 0-32c0-17.7 14.3-32 32-32zM0 192l448 0 0 272c0 26.5-21.5 48-48 48L48 512c-26.5 0-48-21.5-48-48L0 192zM329 305c9.4-9.4 9.4-24.6 0-33.9s-24.6-9.4-33.9 0l-95 95-47-47c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9l64 64c9.4 9.4 24.6 9.4 33.9 0L329 305z"
+  },
+  "fa-barcode": {
+    width: 512,
+    height: 512,
+    path: "M24 32C10.7 32 0 42.7 0 56L0 456c0 13.3 10.7 24 24 24l16 0c13.3 0 24-10.7 24-24L64 56c0-13.3-10.7-24-24-24L24 32zm88 0c-8.8 0-16 7.2-16 16l0 416c0 8.8 7.2 16 16 16s16-7.2 16-16l0-416c0-8.8-7.2-16-16-16zm72 0c-13.3 0-24 10.7-24 24l0 400c0 13.3 10.7 24 24 24l16 0c13.3 0 24-10.7 24-24l0-400c0-13.3-10.7-24-24-24l-16 0zm96 0c-13.3 0-24 10.7-24 24l0 400c0 13.3 10.7 24 24 24l16 0c13.3 0 24-10.7 24-24l0-400c0-13.3-10.7-24-24-24l-16 0zM448 56l0 400c0 13.3 10.7 24 24 24l16 0c13.3 0 24-10.7 24-24l0-400c0-13.3-10.7-24-24-24l-16 0c-13.3 0-24 10.7-24 24zm-64-8l0 416c0 8.8 7.2 16 16 16s16-7.2 16-16l0-416c0-8.8-7.2-16-16-16s-16 7.2-16 16z"
+  },
+  "fa-qrcode": {
+    width: 448,
+    height: 512,
+    path: "M0 80C0 53.5 21.5 32 48 32l96 0c26.5 0 48 21.5 48 48l0 96c0 26.5-21.5 48-48 48l-96 0c-26.5 0-48-21.5-48-48L0 80zM64 96l0 64 64 0 0-64L64 96zM0 336c0-26.5 21.5-48 48-48l96 0c26.5 0 48 21.5 48 48l0 96c0 26.5-21.5 48-48 48l-96 0c-26.5 0-48-21.5-48-48l0-96zm64 16l0 64 64 0 0-64-64 0zM304 32l96 0c26.5 0 48 21.5 48 48l0 96c0 26.5-21.5 48-48 48l-96 0c-26.5 0-48-21.5-48-48l0-96c0-26.5 21.5-48 48-48zm80 64l-64 0 0 64 64 0 0-64zM256 304c0-8.8 7.2-16 16-16l64 0c8.8 0 16 7.2 16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s7.2-16 16-16s16 7.2 16 16l0 96c0 8.8-7.2 16-16 16l-64 0c-8.8 0-16-7.2-16-16s-7.2-16-16-16s-16 7.2-16 16l0 64c0 8.8-7.2 16-16 16l-32 0c-8.8 0-16-7.2-16-16l0-160zM368 480a16 16 0 1 1 0-32 16 16 0 1 1 0 32zm64 0a16 16 0 1 1 0-32 16 16 0 1 1 0 32z"
+  }
+}, Ze = "mxw01.print-template", Je = 1, Ke = "mxw01.print-batch", ti = 1, Ut = /\{\{\s*([A-Za-z][A-Za-z0-9_.-]{0,63})\s*\}\}/g, Q = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+function it(e) {
+  return !!e && typeof e == "object" && !Array.isArray(e);
+}
+function ei(e) {
+  const t = /* @__PURE__ */ new Set(), i = (n) => {
+    for (const s of n.matchAll(Ut))
+      s[1] && t.add(s[1]);
+  }, r = it(e) && Array.isArray(e.nodes) ? e.nodes : [];
+  for (const n of r)
+    if (it(n)) {
+      if ((n.kind === "text" || n.kind === "fortune") && typeof n.text == "string") i(n.text);
+      else if ((n.kind === "barcode" || n.kind === "qr") && typeof n.value == "string") i(n.value);
+      else if (n.kind === "checklist" && Array.isArray(n.items))
+        for (const s of n.items)
+          it(s) && typeof s.text == "string" && i(s.text);
+    }
+  return [...t];
+}
+function rt(e, t) {
+  return e.replace(Ut, (i, r) => t[r] ?? i);
+}
+function ii(e, t) {
+  switch (e.kind) {
+    case "text":
+    case "fortune":
+      return { ...e, text: rt(e.text, t) };
+    case "barcode":
+    case "qr":
+      return { ...e, value: rt(e.value, t) };
+    case "checklist":
+      return {
+        ...e,
+        items: e.items.map((i) => ({ ...i, text: rt(i.text, t) }))
+      };
+    default:
+      return e;
+  }
+}
+function Yi(e, t = {}) {
+  return Ft({
+    ...e,
+    nodes: e.nodes.map((i) => ii(i, t))
+  });
+}
+function Wi(e, t = {}) {
+  const i = { ...t };
+  for (const [r, n] of Object.entries(e.variables ?? {}))
+    i[r] === void 0 && typeof n.defaultValue == "string" && (i[r] = n.defaultValue);
+  return i;
+}
+function ri(e, t) {
+  const i = String(Math.trunc(e)), r = Math.max(0, Math.min(32, Math.trunc(t.padding ?? 0))), n = i.startsWith("-") ? "-" : "", s = n ? i.slice(1) : i;
+  return `${t.prefix ?? ""}${n}${s.padStart(r, "0")}${t.suffix ?? ""}`;
+}
+function Qi(e, t) {
+  const i = { ...e.values ?? {} };
+  if (e.rows?.[t] && Object.assign(i, e.rows[t]), e.sequence) {
+    const r = e.sequence.start + t * (e.sequence.step ?? 1);
+    i[e.sequence.variable] = ri(r, e.sequence);
+  }
+  return i;
+}
+function Zi(e) {
+  const t = [];
+  if (!e || typeof e != "object" || Array.isArray(e))
+    return [{ severity: "error", code: "template.type", message: "Template must be an object." }];
+  const i = e;
+  if (i.schema !== Ze && t.push({ severity: "error", code: "template.schema", message: "Unsupported template schema." }), i.version !== Je && t.push({ severity: "error", code: "template.version", message: "Unsupported template version." }), (typeof i.id != "string" || i.id.length === 0 || i.id.length > 128) && t.push({ severity: "error", code: "template.id", message: "Template id is invalid." }), (typeof i.name != "string" || i.name.trim().length === 0 || i.name.length > 128) && t.push({ severity: "error", code: "template.name", message: "Template name is invalid." }), i.description !== void 0 && (typeof i.description != "string" || i.description.length > 512) && t.push({ severity: "error", code: "template.description", message: "Template description is invalid." }), i.preferredMediaProfileId !== void 0 && (typeof i.preferredMediaProfileId != "string" || i.preferredMediaProfileId.length === 0 || i.preferredMediaProfileId.length > 128) && t.push({ severity: "error", code: "template.media-profile", message: "preferredMediaProfileId is invalid." }), i.variables !== void 0)
+    if (!i.variables || typeof i.variables != "object" || Array.isArray(i.variables))
+      t.push({ severity: "error", code: "template.variables", message: "Template variables must be an object." });
+    else
+      for (const [r, n] of Object.entries(i.variables)) {
+        if (!Q.test(r) || !n || typeof n != "object" || Array.isArray(n)) {
+          t.push({ severity: "error", code: "template.variable", message: `Variable "${r}" is invalid.` });
+          continue;
+        }
+        const s = n;
+        s.type !== "text" && s.type !== "sequence" && s.type !== "date" && t.push({ severity: "error", code: "template.variable-type", message: `Variable "${r}" has an unsupported type.` });
+        for (const o of ["defaultValue", "label", "prefix", "suffix"])
+          s[o] !== void 0 && (typeof s[o] != "string" || s[o].length > 256) && t.push({ severity: "error", code: "template.variable-value", message: `Variable "${r}" has an invalid ${o}.` });
+        for (const o of ["start", "step", "padding"])
+          s[o] !== void 0 && (!Number.isInteger(s[o]) || !Number.isFinite(s[o])) && t.push({ severity: "error", code: "template.variable-number", message: `Variable "${r}" has an invalid ${o}.` });
+      }
+  if (!i.document)
+    t.push({ severity: "error", code: "template.document", message: "Template has no document." });
+  else {
+    t.push(...qt(i.document));
+    const r = i.variables && typeof i.variables == "object" && !Array.isArray(i.variables) ? i.variables : {};
+    for (const n of ei(i.document))
+      n in r || t.push({
+        severity: "error",
+        code: "template.unbound-variable",
+        message: `Document token "{{${n}}}" has no variable definition.`
+      });
+  }
+  return t;
+}
+function Ji(e) {
+  const t = [];
+  if (!e || typeof e != "object" || Array.isArray(e))
+    return [{ severity: "error", code: "batch.type", message: "Batch job must be an object." }];
+  const i = e;
+  if ((i.schema !== Ke || i.version !== ti) && t.push({ severity: "error", code: "batch.schema", message: "Unsupported batch job schema." }), i.jobId !== void 0 && (typeof i.jobId != "string" || i.jobId.length === 0 || i.jobId.length > 128) && t.push({ severity: "error", code: "batch.job-id", message: "jobId must be a short non-empty string." }), i.templateFingerprint !== void 0 && (typeof i.templateFingerprint != "string" || !/^fnv1a32-[0-9a-f]{8}$/.test(i.templateFingerprint)) && t.push({ severity: "error", code: "batch.template-fingerprint", message: "templateFingerprint must be a canonical FNV-1a fingerprint." }), i.index !== void 0 && (!Number.isInteger(i.index) || i.index < 0 || i.index >= (i.count ?? 0)) && t.push({ severity: "error", code: "batch.index", message: "index must identify an item within the batch." }), (!Number.isInteger(i.count) || (i.count ?? 0) < 1 || (i.count ?? 0) > 1e3) && t.push({ severity: "error", code: "batch.count", message: "Batch count must be an integer from 1 to 1000." }), i.intervalMs !== void 0 && (!Number.isInteger(i.intervalMs) || i.intervalMs < 0 || i.intervalMs > 6e4) && t.push({ severity: "error", code: "batch.interval", message: "Batch interval must be 0–60000 ms." }), i.confirmEach !== void 0 && typeof i.confirmEach != "boolean" && t.push({ severity: "error", code: "batch.confirm", message: "confirmEach must be boolean." }), i.onError !== void 0 && !["pause", "retry", "skip", "stop"].includes(i.onError) && t.push({ severity: "error", code: "batch.on-error", message: "onError must be pause, retry, skip or stop." }), i.values !== void 0 && (!i.values || typeof i.values != "object" || Array.isArray(i.values)))
+    t.push({ severity: "error", code: "batch.values", message: "values must be a string map." });
+  else if (i.values)
+    for (const [r, n] of Object.entries(i.values))
+      (!Q.test(r) || typeof n != "string" || n.length > 256) && t.push({ severity: "error", code: "batch.values", message: `Value for "${r}" is invalid.` });
+  if (i.rows !== void 0 && (!Array.isArray(i.rows) || i.rows.length > 1e3) ? t.push({ severity: "error", code: "batch.rows", message: "rows must contain at most 1000 data rows." }) : i.rows && i.rows.forEach((r) => {
+    (!r || typeof r != "object" || Array.isArray(r) || Object.entries(r).some(([n, s]) => !Q.test(n) || typeof s != "string" || s.length > 256)) && t.push({ severity: "error", code: "batch.rows", message: "Each batch row must be a string map." });
+  }), i.sequence !== void 0 && (!i.sequence || typeof i.sequence != "object" || Array.isArray(i.sequence)))
+    t.push({ severity: "error", code: "batch.sequence", message: "sequence must be an object." });
+  else if (i.sequence) {
+    const r = i.sequence;
+    (typeof r.variable != "string" || !Q.test(r.variable)) && t.push({ severity: "error", code: "batch.sequence", message: "Sequence variable is required." }), (!Number.isInteger(r.start) || !Number.isFinite(r.start) || r.step !== void 0 && (!Number.isInteger(r.step) || !Number.isFinite(r.step))) && t.push({ severity: "error", code: "batch.sequence", message: "Sequence start and step must be integers." }), r.padding !== void 0 && (!Number.isInteger(r.padding) || r.padding < 0 || r.padding > 32) && t.push({ severity: "error", code: "batch.sequence-padding", message: "Sequence padding must be an integer from 0 to 32." });
+    for (const n of ["prefix", "suffix"])
+      r[n] !== void 0 && (typeof r[n] != "string" || r[n].length > 64) && t.push({ severity: "error", code: "batch.sequence-affix", message: `Sequence ${n} is invalid.` });
+  }
+  return t;
+}
+function Ki(e, t, i) {
+  return { id: e, kind: "fortune", text: t, ...i, align: "center", fontId: "mxw-wide", fontSizeDots: 2 };
+}
+const A = {
   // Service UUIDs
   PRINTER_SERVICE: "0000ae30-0000-1000-8000-00805f9b34fb",
   PRINTER_SERVICE_ALT: "0000af30-0000-1000-8000-00805f9b34fb",
@@ -1059,7 +2421,7 @@ const u = {
   NOTIFY_SHORT: "ae02",
   DATA_SHORT: "ae03"
 };
-class P {
+class Gt {
   dataListeners = /* @__PURE__ */ new Map();
   /**
    * Clear all registered listeners
@@ -1068,10 +2430,11 @@ class P {
     this.dataListeners.clear();
   }
 }
-class _ extends P {
+class nt extends Gt {
   constructor(t) {
     super(), this.characteristic = t;
   }
+  nativeListeners = /* @__PURE__ */ new Map();
   async writeValueWithoutResponse(t) {
     await this.characteristic.writeValueWithoutResponse(t);
   }
@@ -1081,14 +2444,19 @@ class _ extends P {
   async stopNotifications() {
     await this.characteristic.stopNotifications();
   }
-  addEventListener(t, e) {
-    this.characteristic.addEventListener(t, e);
+  addEventListener(t, i) {
+    const r = (n) => {
+      const s = n.target?.value;
+      s && i({ value: new Uint8Array(s.buffer, s.byteOffset, s.byteLength) });
+    };
+    this.nativeListeners.set(i, r), this.characteristic.addEventListener(t, r);
   }
-  removeEventListener(t, e) {
-    this.characteristic.removeEventListener(t, e);
+  removeEventListener(t, i) {
+    const r = this.nativeListeners.get(i);
+    r && (this.characteristic.removeEventListener(t, r), this.nativeListeners.delete(i));
   }
 }
-class tt {
+class tr {
   device = null;
   server = null;
   /**
@@ -1106,19 +2474,19 @@ class tt {
     try {
       return this.device = await navigator.bluetooth.requestDevice({
         filters: [
-          { services: [u.PRINTER_SERVICE] },
-          { services: [u.PRINTER_SERVICE_ALT] }
+          { services: [A.PRINTER_SERVICE] },
+          { services: [A.PRINTER_SERVICE_ALT] }
         ],
         optionalServices: [
-          u.PRINTER_SERVICE,
-          u.PRINTER_SERVICE_ALT
+          A.PRINTER_SERVICE,
+          A.PRINTER_SERVICE_ALT
         ]
       }), {
         id: this.device.id,
         name: this.device.name
       };
     } catch (t) {
-      throw new Error(
+      throw this.device = null, new Error(
         `Failed to request Bluetooth device: ${t.message}`
       );
     }
@@ -1130,52 +2498,55 @@ class tt {
     if (!this.device || this.device.id !== t.id)
       throw new Error("Device not found. Please request device first.");
     try {
-      const e = this.device.gatt;
-      if (!e)
+      const i = this.device.gatt;
+      if (!i)
         throw new Error("GATT not available on device");
-      if (this.server = await e.connect(), !this.server)
+      if (this.server = await i.connect(), !this.server)
         throw new Error("Failed to connect to GATT server");
       let r;
       try {
         r = await this.server.getPrimaryService(
-          u.PRINTER_SERVICE
+          A.PRINTER_SERVICE
         );
       } catch {
         console.log("Trying alternate UUID for macOS compatibility..."), r = await this.server.getPrimaryService(
-          u.PRINTER_SERVICE_ALT
+          A.PRINTER_SERVICE_ALT
         );
       }
-      const [i, s, n] = await Promise.all([
-        r.getCharacteristic(u.CONTROL),
-        r.getCharacteristic(u.NOTIFY),
-        r.getCharacteristic(u.DATA)
-      ]);
-      return {
+      const [n, s, o] = await Promise.all([
+        r.getCharacteristic(A.CONTROL),
+        r.getCharacteristic(A.NOTIFY),
+        r.getCharacteristic(A.DATA)
+      ]), a = this.device, c = /* @__PURE__ */ new Set(), h = () => {
+        c.forEach((u) => u(new Error("Bluetooth device disconnected")));
+      };
+      return a.addEventListener("gattserverdisconnected", h), {
         device: t,
         disconnect: async () => {
-          this.server?.connected && this.server.disconnect(), this.device = null, this.server = null;
+          a.removeEventListener("gattserverdisconnected", h), c.clear(), this.server?.connected && this.server.disconnect(), this.device = null, this.server = null;
         },
-        controlCharacteristic: new _(
-          i
+        onDisconnect: (u) => (c.add(u), () => c.delete(u)),
+        controlCharacteristic: new nt(
+          n
         ),
-        dataCharacteristic: new _(n),
-        notifyCharacteristic: new _(s)
+        dataCharacteristic: new nt(o),
+        notifyCharacteristic: new nt(s)
       };
-    } catch (e) {
-      throw new Error(
-        `Failed to connect to device: ${e.message}`
+    } catch (i) {
+      throw this.server?.connected && this.server.disconnect(), this.server = null, this.device = null, new Error(
+        `Failed to connect to device: ${i.message}`
       );
     }
   }
 }
-class R extends P {
+class st extends Gt {
   characteristic;
   constructor(t) {
     super(), this.characteristic = t;
   }
   async writeValueWithoutResponse(t) {
-    const e = Buffer.from(t);
-    await this.characteristic.writeAsync(e, !0);
+    const i = Buffer.from(t);
+    await this.characteristic.writeAsync(i, !0);
   }
   async startNotifications() {
     await this.characteristic.subscribeAsync();
@@ -1183,142 +2554,1179 @@ class R extends P {
   async stopNotifications() {
     await this.characteristic.unsubscribeAsync();
   }
-  addEventListener(t, e) {
+  addEventListener(t, i) {
     if (t === "characteristicvaluechanged") {
-      const r = (i) => {
-        e({
-          target: {
-            value: {
-              buffer: i.buffer.slice(
-                i.byteOffset,
-                i.byteOffset + i.byteLength
-              )
-            }
-          }
-        });
+      const r = (n) => {
+        i({ value: new Uint8Array(n.buffer, n.byteOffset, n.byteLength) });
       };
-      this.dataListeners.set(e, r), this.characteristic.on("data", r);
+      this.dataListeners.set(i, r), this.characteristic.on("data", r);
     }
   }
-  removeEventListener(t, e) {
+  removeEventListener(t, i) {
     if (t === "characteristicvaluechanged") {
-      const r = this.dataListeners.get(e);
-      r && (this.characteristic.removeListener("data", r), this.dataListeners.delete(e));
+      const r = this.dataListeners.get(i);
+      r && (this.characteristic.removeListener("data", r), this.dataListeners.delete(i));
     }
   }
 }
-class et {
+class er {
   noble = null;
-  peripheral = null;
+  nobleModule;
+  peripherals = /* @__PURE__ */ new Map();
+  activePeripheral = null;
+  scanPromise = null;
   characteristics = {};
   constructor() {
+    this.nobleModule = this.loadNobleModule();
+  }
+  async loadNobleModule() {
     try {
-      this.noble = require("@stoprocent/noble");
+      const i = await new Function(
+        "specifier",
+        "return import(specifier);"
+      )("@stoprocent/noble");
+      return i.default ?? i;
     } catch {
+      return null;
+    }
+  }
+  async ensureNoble() {
+    if (!this.noble && (this.noble = await this.nobleModule, !this.noble))
       throw new Error(
         "Noble is not installed. Please run: npm install @stoprocent/noble"
       );
-    }
   }
   /**
    * Check if Bluetooth is available (Noble is loaded)
    * The powered on state is checked during requestDevice()
    */
   isAvailable() {
-    return this.noble !== null;
+    return !0;
   }
   /**
    * Scan for and request a Bluetooth printer device
    * Automatically finds devices with MXW01 printer service UUID
    */
   async requestDevice() {
-    return new Promise((t, e) => {
-      const r = setTimeout(() => {
-        this.noble.stopScanning(), e(new Error("Device scan timeout (30s)"));
-      }, 3e4), i = (n) => {
-        this.noble.stopScanning(), clearTimeout(r), this.peripheral = n, this.noble.removeListener("discover", i), t({
-          id: n.id || n.uuid,
-          name: n.advertisement.localName || "MXW01 Printer"
-        });
+    if (await this.ensureNoble(), this.scanPromise)
+      return this.scanPromise;
+    const t = new Promise((i, r) => {
+      let n = !1, s = null;
+      const o = setTimeout(() => {
+        c(new Error("Device scan timeout (30s)"));
+      }, 3e4), a = (l) => {
+        clearTimeout(o), this.noble.removeListener("discover", h), s && (this.noble.removeListener("stateChange", s), s = null);
+        try {
+          this.noble.stopScanning();
+        } catch {
+        }
+      }, c = (l) => {
+        n || (n = !0, a(), r(l));
+      }, h = (l) => {
+        if (n) return;
+        const f = l.id || l.uuid;
+        f && (n = !0, this.peripherals.set(f, l), a(), i({
+          id: f,
+          name: l.advertisement?.localName || "MXW01 Printer"
+        }));
       };
-      this.noble.on("discover", i);
-      const s = () => {
-        console.log("Scanning for MXW01 printer..."), this.noble.startScanning(
-          [u.PRINTER_SERVICE, u.PRINTER_SERVICE_ALT],
-          !1
-        );
+      this.noble.on("discover", h);
+      const u = () => {
+        console.log("Scanning for MXW01 printer...");
+        try {
+          this.noble.startScanning(
+            [A.PRINTER_SERVICE, A.PRINTER_SERVICE_ALT],
+            !1
+          );
+        } catch (l) {
+          c(l instanceof Error ? l : new Error(String(l)));
+        }
       };
-      if (this.noble.state === "poweredOn")
-        s();
-      else {
-        const n = (c) => {
-          c === "poweredOn" && (this.noble.removeListener("stateChange", n), s());
-        };
-        this.noble.on("stateChange", n);
-      }
+      this.noble.state === "poweredOn" ? u() : (s = (l) => {
+        l === "poweredOn" && (s && (this.noble.removeListener("stateChange", s), s = null), u());
+      }, this.noble.on("stateChange", s));
     });
+    this.scanPromise = t;
+    try {
+      return await t;
+    } finally {
+      this.scanPromise === t && (this.scanPromise = null);
+    }
   }
   /**
    * Connect to a Bluetooth device and get printer service characteristics
    */
   async connect(t) {
-    if (!this.peripheral)
-      throw new Error("No peripheral found. Call requestDevice() first.");
+    await this.ensureNoble();
+    const i = this.peripherals.get(t.id);
+    if (!i)
+      throw new Error("No matching peripheral found. Call requestDevice() first.");
     try {
-      await this.peripheral.connectAsync(), console.log("Connected to peripheral");
-      const { characteristics: e } = await this.peripheral.discoverAllServicesAndCharacteristicsAsync();
-      if (console.log(`Found ${e.length} characteristics`), this.characteristics.control = e.find(
-        (i) => i.uuid === u.CONTROL_SHORT
-      ), this.characteristics.notify = e.find(
-        (i) => i.uuid === u.NOTIFY_SHORT
-      ), this.characteristics.data = e.find(
-        (i) => i.uuid === u.DATA_SHORT
+      await i.connectAsync(), console.log("Connected to peripheral");
+      const { characteristics: r } = await i.discoverAllServicesAndCharacteristicsAsync();
+      if (console.log(`Found ${r.length} characteristics`), this.characteristics.control = r.find(
+        (n) => n.uuid === A.CONTROL_SHORT
+      ), this.characteristics.notify = r.find(
+        (n) => n.uuid === A.NOTIFY_SHORT
+      ), this.characteristics.data = r.find(
+        (n) => n.uuid === A.DATA_SHORT
       ), console.log("Control:", this.characteristics.control ? "✅" : "❌"), console.log("Notify:", this.characteristics.notify ? "✅" : "❌"), console.log("Data:", this.characteristics.data ? "✅" : "❌"), !this.characteristics.control || !this.characteristics.notify || !this.characteristics.data)
         throw new Error(
           `Missing required characteristics. Found: ${Object.keys(
             this.characteristics
           ).join(", ")}`
         );
-      const r = this.peripheral;
-      return {
+      return this.activePeripheral = i, {
         device: t,
         disconnect: async () => {
-          r && r.state === "connected" && (await r.disconnectAsync(), console.log("Disconnected from peripheral")), this.peripheral = null, this.characteristics = {};
+          i && i.state === "connected" && (await i.disconnectAsync(), console.log("Disconnected from peripheral")), this.activePeripheral === i && (this.activePeripheral = null), this.peripherals.delete(t.id), this.characteristics = {};
         },
-        controlCharacteristic: new R(
+        onDisconnect: (n) => {
+          const s = (o) => {
+            this.activePeripheral === i && (this.activePeripheral = null), this.peripherals.delete(t.id), n(o);
+          };
+          return i.on("disconnect", s), () => i.removeListener("disconnect", s);
+        },
+        controlCharacteristic: new st(
           this.characteristics.control
         ),
-        dataCharacteristic: new R(
+        dataCharacteristic: new st(
           this.characteristics.data
         ),
-        notifyCharacteristic: new R(
+        notifyCharacteristic: new st(
           this.characteristics.notify
         )
       };
-    } catch (e) {
-      if (this.peripheral && this.peripheral.state === "connected")
+    } catch (r) {
+      if (i && i.state === "connected")
         try {
-          await this.peripheral.disconnectAsync();
-        } catch (r) {
-          console.error("Error disconnecting:", r);
+          await i.disconnectAsync();
+        } catch (n) {
+          console.error("Error disconnecting:", n);
         }
-      throw new Error(
-        `Failed to connect to device: ${e.message}`
+      throw this.peripherals.delete(t.id), new Error(
+        `Failed to connect to device: ${r.message}`
       );
     }
   }
 }
+const ot = "bitmap-5x7-qr1-v6", kt = {
+  " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
+  "!": ["00100", "00100", "00100", "00100", "00100", "00000", "00100"],
+  "#": ["01010", "11111", "01010", "01010", "11111", "01010", "01010"],
+  "%": ["11001", "11010", "00100", "01000", "01011", "10011", "00000"],
+  "&": ["01100", "10010", "10100", "01000", "10101", "10010", "01101"],
+  "(": ["00010", "00100", "01000", "01000", "01000", "00100", "00010"],
+  ")": ["01000", "00100", "00010", "00010", "00010", "00100", "01000"],
+  "[": ["01110", "01000", "01000", "01000", "01000", "01000", "01110"],
+  "]": ["01110", "00010", "00010", "00010", "00010", "00010", "01110"],
+  "*": ["00000", "00100", "10101", "01110", "10101", "00100", "00000"],
+  "+": ["00000", "00100", "00100", "11111", "00100", "00100", "00000"],
+  ",": ["00000", "00000", "00000", "00000", "00110", "00100", "01000"],
+  "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
+  ".": ["00000", "00000", "00000", "00000", "00000", "00110", "00110"],
+  "/": ["00001", "00010", "00100", "01000", "10000", "00000", "00000"],
+  "?": ["01110", "10001", "00001", "00010", "00100", "00000", "00100"],
+  0: ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+  1: ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+  2: ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+  3: ["11110", "00001", "00001", "01110", "00001", "00001", "11110"],
+  4: ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+  5: ["11111", "10000", "10000", "11110", "00001", "00001", "11110"],
+  6: ["01110", "10000", "10000", "11110", "10001", "10001", "01110"],
+  7: ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+  8: ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+  9: ["01110", "10001", "10001", "01111", "00001", "00001", "01110"],
+  ":": ["00000", "00110", "00110", "00000", "00110", "00110", "00000"],
+  ";": ["00000", "00110", "00110", "00000", "00110", "00100", "01000"],
+  "=": ["00000", "11111", "00000", "11111", "00000", "00000", "00000"],
+  _: ["00000", "00000", "00000", "00000", "00000", "00000", "11111"],
+  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  Ä: ["01010", "00000", "01110", "10001", "11111", "10001", "10001"],
+  Å: ["00100", "00000", "01110", "10001", "11111", "10001", "10001"],
+  B: ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+  C: ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
+  D: ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+  F: ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  G: ["01110", "10001", "10000", "10111", "10001", "10001", "01110"],
+  H: ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+  I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+  J: ["00111", "00010", "00010", "00010", "00010", "10010", "01100"],
+  K: ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+  L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+  M: ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+  N: ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+  O: ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  Ö: ["01010", "00000", "01110", "10001", "10001", "10001", "01110"],
+  P: ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  Q: ["01110", "10001", "10001", "10001", "10101", "10010", "01101"],
+  R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  S: ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+  T: ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+  U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+  V: ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+  W: ["10001", "10001", "10001", "10101", "10101", "11011", "10001"],
+  X: ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+  Y: ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+  Z: ["11111", "00001", "00010", "00100", "01000", "10000", "11111"]
+}, ni = [
+  "212222",
+  "222122",
+  "222221",
+  "121223",
+  "121322",
+  "131222",
+  "122213",
+  "122312",
+  "132212",
+  "221213",
+  "221312",
+  "231212",
+  "112232",
+  "122132",
+  "122231",
+  "113222",
+  "123122",
+  "123221",
+  "223211",
+  "221132",
+  "221231",
+  "213212",
+  "223112",
+  "312131",
+  "311222",
+  "321122",
+  "321221",
+  "312212",
+  "322112",
+  "322211",
+  "212123",
+  "212321",
+  "232121",
+  "111323",
+  "131123",
+  "131321",
+  "112313",
+  "132113",
+  "132311",
+  "211313",
+  "231113",
+  "231311",
+  "112133",
+  "112331",
+  "132131",
+  "113123",
+  "113321",
+  "133121",
+  "313121",
+  "211331",
+  "231131",
+  "213113",
+  "213311",
+  "213131",
+  "311123",
+  "311321",
+  "331121",
+  "312113",
+  "312311",
+  "332111",
+  "314111",
+  "221411",
+  "431111",
+  "111224",
+  "111422",
+  "121124",
+  "121421",
+  "141122",
+  "141221",
+  "112214",
+  "112412",
+  "122114",
+  "122411",
+  "142112",
+  "142211",
+  "241211",
+  "221114",
+  "413111",
+  "241112",
+  "134111",
+  "111242",
+  "121142",
+  "121241",
+  "114212",
+  "124112",
+  "124211",
+  "411212",
+  "421112",
+  "421211",
+  "212141",
+  "214121",
+  "412121",
+  "111143",
+  "111341",
+  "131141",
+  "114113",
+  "114311",
+  "411113",
+  "411311",
+  "113141",
+  "114131",
+  "311141",
+  "411131",
+  "211412",
+  "211214",
+  "211232",
+  "2331112"
+], si = [
+  "0001101",
+  "0011001",
+  "0010011",
+  "0111101",
+  "0100011",
+  "0110001",
+  "0101111",
+  "0111011",
+  "0110111",
+  "0001011"
+], oi = [
+  "0100111",
+  "0110011",
+  "0011011",
+  "0100001",
+  "0011101",
+  "0111001",
+  "0000101",
+  "0010001",
+  "0001001",
+  "0010111"
+], ai = [
+  "1110010",
+  "1100110",
+  "1101100",
+  "1000010",
+  "1011100",
+  "1001110",
+  "1010000",
+  "1000100",
+  "1001000",
+  "1110100"
+], ci = [
+  "LLLLLL",
+  "LLGLGG",
+  "LLGGLG",
+  "LLGGGL",
+  "LGLLGG",
+  "LGGLLG",
+  "LGGGLL",
+  "LGLGLG",
+  "LGLGGL",
+  "LGGLGL"
+], S = 21, Rt = 19, at = 7;
+function ir(e, t = R, i = {}) {
+  const r = Ft(e), n = qt(r);
+  let s = "fnv1a32-00000000";
+  try {
+    s = Te(r);
+  } catch {
+    n.push({
+      severity: "error",
+      code: "document.fingerprint",
+      message: "Document fingerprinting requires JSON-safe finite values."
+    });
+  }
+  if (n.some((c) => c.severity === "error"))
+    return {
+      pages: [],
+      diagnostics: n,
+      rendererVersion: ot,
+      profileId: t.id,
+      canPrint: !1,
+      documentFingerprint: s
+    };
+  if (r.nodes.length === 0 && n.push({
+    severity: "warning",
+    code: "document.empty",
+    message: "Add at least one printable object before sending this document to a printer."
+  }), r.page.widthDots > t.widthDots)
+    return n.push({
+      severity: "error",
+      code: "render.page-too-wide",
+      message: `Document width ${r.page.widthDots} exceeds profile width ${t.widthDots}.`
+    }), {
+      pages: [],
+      diagnostics: n,
+      rendererVersion: ot,
+      profileId: t.id,
+      canPrint: !1,
+      documentFingerprint: s
+    };
+  const o = Array.from(
+    { length: r.page.heightDots },
+    () => new Array(t.widthDots).fill(!1)
+  );
+  r.page.frame && Ei(r.page.frame, r.page.widthDots, r.page.heightDots, o);
+  for (const c of r.nodes)
+    try {
+      hi(c, o, t, i, n);
+    } catch (h) {
+      n.push({
+        severity: "error",
+        code: `render.${c.kind}`,
+        message: h instanceof Error ? h.message : String(h),
+        nodeId: c.id
+      });
+    }
+  return {
+    pages: [dt(o, t)],
+    diagnostics: n,
+    rendererVersion: ot,
+    profileId: t.id,
+    canPrint: n.every((c) => c.severity === "info"),
+    documentFingerprint: s
+  };
+}
+function hi(e, t, i, r, n) {
+  switch (e.rotation !== void 0 && e.rotation !== 0 && n.push({
+    severity: "warning",
+    code: "render.rotation-ignored",
+    message: "Document node rotation is not supported by renderer v1.",
+    nodeId: e.id
+  }), e.kind) {
+    case "text":
+      tt(e, t, n);
+      return;
+    case "image":
+      Ai(e, t, i, r);
+      return;
+    case "rule":
+      ki(e, t);
+      return;
+    case "barcode":
+      Ri(e, t, n);
+      return;
+    case "qr":
+      Ci(e, t);
+      return;
+    case "checklist":
+      Pi(e, t, n);
+      return;
+    case "fortune":
+      Si(e, t, n);
+      return;
+    case "icon":
+      yi(e, t);
+      return;
+  }
+}
+function B(e, t, i) {
+  const r = [...e];
+  return r.length === 0 ? 0 : r.reduce((n, s, o) => {
+    const a = Vt(t, s);
+    return n + a.advance * i - (o === r.length - 1 ? a.spacing * i : 0);
+  }, 0);
+}
+function li(e, t, i, r) {
+  const n = [];
+  let s = "";
+  for (const o of [...e]) {
+    const a = `${s}${o}`;
+    s && B(a, i, r) > t ? (n.push(s), s = o) : s = a;
+  }
+  return (s || n.length === 0) && n.push(s), n;
+}
+function ui(e, t, i, r) {
+  if (e.length === 0) return [{ text: "", width: 0 }];
+  const n = e.match(/\s+|\S+/gu) ?? [e], s = [];
+  let o = "";
+  for (const c of n) {
+    const h = `${o}${c}`;
+    if (o && B(h, i, r) > t) {
+      const u = o.replace(/\s+$/u, "");
+      s.push({ text: u, width: B(u, i, r) }), o = c.replace(/^\s+/u, "");
+    } else
+      o = h;
+    if (B(o, i, r) > t) {
+      const u = li(o, t, i, r);
+      u.slice(0, -1).forEach((l) => s.push({
+        text: l,
+        width: B(l, i, r)
+      })), o = u[u.length - 1] ?? "";
+    }
+  }
+  const a = o.replace(/\s+$/u, "");
+  return s.push({ text: a, width: B(a, i, r) }), s;
+}
+function Ct(e, t) {
+  const i = e.fontId ?? "mxw-vector", r = Math.max(1, Math.trunc(e.fontSizeDots ?? 1)), n = Math.max(0, Math.trunc(e.width)), s = Math.max(
+    1,
+    Math.trunc((e.lineHeightDots ?? 8 * r) * t / r)
+  ), o = e.text.split(`
+`).flatMap((a) => ui(a, n, i, t));
+  return {
+    lines: o,
+    scale: t,
+    lineHeight: s,
+    horizontalOverflow: o.some((a) => a.width > n)
+  };
+}
+function tt(e, t, i = [], r = e.id) {
+  const n = Math.max(1, Math.trunc(e.fontSizeDots ?? 1));
+  let s = Ct(e, n);
+  const o = Math.trunc(e.x), a = Math.trunc(e.y), c = Math.max(0, Math.trunc(e.width)), h = Math.max(0, Math.trunc(e.height));
+  for (; s.scale > 1 && (s.lines.length * s.lineHeight > h || s.horizontalOverflow); )
+    s = Ct(e, s.scale - 1);
+  const u = {
+    x: o,
+    y: a,
+    width: c,
+    height: h
+  }, l = e.fontId ?? "mxw-vector", f = e.fontWeight === "bold" || l === "mxw-bold", y = Math.max(0, Math.ceil(h / Math.max(1, s.lineHeight))), g = 7 * s.scale, w = h >= g ? Math.floor((h - g) / Math.max(1, s.lineHeight)) + 1 : 0;
+  (s.horizontalOverflow || s.lines.length > w) && i.push({
+    severity: "warning",
+    code: "render.text-overflow",
+    message: "Text does not fit inside its node bounds after wrapping and automatic scaling.",
+    nodeId: r
+  }), s.lines.forEach((d, x) => {
+    if (x >= y) return;
+    let M = o;
+    e.align === "center" ? M = o + Math.trunc((c - d.width) / 2) : e.align === "right" && (M = o + c - d.width);
+    const E = a + x * s.lineHeight;
+    let C = M;
+    for (const T of d.text) {
+      const I = Vt(l, T);
+      vi(I, C, E, s.scale, t, f, u), C += I.advance * s.scale;
+    }
+  });
+}
+function Vt(e, t) {
+  return e !== "mxw-5x7" ? fi(e, t) : { rows: kt[t.toUpperCase()] ?? kt["?"], width: 5, advance: 6, spacing: 1 };
+}
+function fi(e, t) {
+  const i = J[t.toUpperCase()] ?? J["?"], r = e === "mxw-condensed" ? 0.66 : e === "mxw-wide" ? 2 : 1, n = e === "mxw-vector" || e === "mxw-mono" || e === "mxw-bold" || e === "mxw-serif" || e === "mxw-rounded", s = n ? 5 : i.width * r, o = i.strokes.map((u) => u.map(([l, f]) => [l * r, f])), a = (i.dots ?? []).map(([u, l]) => [u * r, l]), c = e === "mxw-serif" ? [...o, ...di(o, r)] : o, h = e === "mxw-condensed" ? 4 : e === "mxw-wide" ? 11 : n ? 6 : Math.ceil(s) + 1;
+  return {
+    strokes: c,
+    dots: a,
+    width: s,
+    advance: h,
+    spacing: 1,
+    strokeWidth: e === "mxw-bold" ? 1.15 : e === "mxw-rounded" ? 0.95 : 0.85
+  };
+}
+function di(e, t) {
+  const i = [];
+  for (const r of e) {
+    if (r.length !== 2 || Math.abs(r[0][0] - r[1][0]) > 0.08) continue;
+    const [n, s] = r;
+    if (!(Math.abs(s[1] - n[1]) < 2))
+      for (const o of [n, s])
+        i.push([
+          [o[0] - 0.35 * t, o[1]],
+          [o[0] + 0.35 * t, o[1]]
+        ]);
+  }
+  return i;
+}
+const z = 4, Tt = /* @__PURE__ */ new Map(), mi = /([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)|([a-zA-Z])/g;
+function pi(e) {
+  const t = [];
+  for (const g of e.matchAll(mi))
+    t.push(g[1] === void 0 ? g[2] : Number(g[1]));
+  const i = [];
+  let r = 0, n, s, o = { x: 0, y: 0 }, a = o, c, h, u;
+  const l = (g) => {
+    if (r + g > t.length) return;
+    const w = t.slice(r, r + g);
+    if (!w.some((d) => typeof d != "number"))
+      return r += g, w;
+  }, f = (g, w, d) => ({
+    x: d ? o.x + g : g,
+    y: d ? o.y + w : w
+  }), y = (g) => {
+    c || (c = [o], i.push(c)), c.push(g);
+  };
+  for (; r < t.length && (typeof t[r] == "string" && (n = t[r], r += 1), !!n); ) {
+    const g = n.toUpperCase(), w = n !== g;
+    if (g === "Z") {
+      c && c.length > 1 && c.push(a), o = a, c = void 0, n = void 0, s = void 0, h = void 0, u = void 0;
+      continue;
+    }
+    if (g === "M") {
+      const d = l(2);
+      if (!d) break;
+      o = f(d[0], d[1], w), a = o, c = [o], i.push(c), n = w ? "l" : "L", s = "M", h = void 0, u = void 0;
+      continue;
+    }
+    if (g === "L") {
+      const d = l(2);
+      if (!d) break;
+      o = f(d[0], d[1], w), y(o), s = "L", h = void 0, u = void 0;
+      continue;
+    }
+    if (g === "H") {
+      const d = l(1);
+      if (!d) break;
+      o = { x: w ? o.x + d[0] : d[0], y: o.y }, y(o), s = "H", h = void 0, u = void 0;
+      continue;
+    }
+    if (g === "V") {
+      const d = l(1);
+      if (!d) break;
+      o = { x: o.x, y: w ? o.y + d[0] : d[0] }, y(o), s = "V", h = void 0, u = void 0;
+      continue;
+    }
+    if (g === "C") {
+      const d = l(6);
+      if (!d) break;
+      const x = f(d[0], d[1], w), M = f(d[2], d[3], w), E = f(d[4], d[5], w);
+      It(o, x, M, E, y), o = E, s = "C", h = M, u = void 0;
+      continue;
+    }
+    if (g === "S") {
+      const d = l(4);
+      if (!d) break;
+      const x = s === "C" || s === "S" ? _t(o, h ?? o) : o, M = f(d[0], d[1], w), E = f(d[2], d[3], w);
+      It(o, x, M, E, y), o = E, s = "S", h = M, u = void 0;
+      continue;
+    }
+    if (g === "Q") {
+      const d = l(4);
+      if (!d) break;
+      const x = f(d[0], d[1], w), M = f(d[2], d[3], w);
+      Nt(o, x, M, y), o = M, s = "Q", h = void 0, u = x;
+      continue;
+    }
+    if (g === "T") {
+      const d = l(2);
+      if (!d) break;
+      const x = s === "Q" || s === "T" ? _t(o, u ?? o) : o, M = f(d[0], d[1], w);
+      Nt(o, x, M, y), o = M, s = "T", h = void 0, u = x;
+      continue;
+    }
+    if (g === "A") {
+      const d = l(7);
+      if (!d) break;
+      const x = f(d[5], d[6], w);
+      gi(
+        o,
+        d[0],
+        d[1],
+        d[2],
+        d[3] !== 0,
+        d[4] !== 0,
+        x,
+        y
+      ), o = x, s = "A", h = void 0, u = void 0;
+      continue;
+    }
+    break;
+  }
+  return { subpaths: i };
+}
+function _t(e, t) {
+  return { x: 2 * e.x - t.x, y: 2 * e.y - t.y };
+}
+function U(e, t) {
+  return Math.hypot(t.x - e.x, t.y - e.y);
+}
+function It(e, t, i, r, n) {
+  const s = U(e, t) + U(t, i) + U(i, r), o = Math.max(4, Math.ceil(s / 16));
+  for (let a = 1; a <= o; a += 1) {
+    const c = a / o, h = 1 - c;
+    n({
+      x: h ** 3 * e.x + 3 * h ** 2 * c * t.x + 3 * h * c ** 2 * i.x + c ** 3 * r.x,
+      y: h ** 3 * e.y + 3 * h ** 2 * c * t.y + 3 * h * c ** 2 * i.y + c ** 3 * r.y
+    });
+  }
+}
+function Nt(e, t, i, r) {
+  const n = U(e, t) + U(t, i), s = Math.max(4, Math.ceil(n / 16));
+  for (let o = 1; o <= s; o += 1) {
+    const a = o / s, c = 1 - a;
+    r({
+      x: c ** 2 * e.x + 2 * c * a * t.x + a ** 2 * i.x,
+      y: c ** 2 * e.y + 2 * c * a * t.y + a ** 2 * i.y
+    });
+  }
+}
+function gi(e, t, i, r, n, s, o, a) {
+  let c = Math.abs(t), h = Math.abs(i);
+  if (c === 0 || h === 0 || e.x === o.x && e.y === o.y) {
+    a(o);
+    return;
+  }
+  const u = r * Math.PI / 180, l = Math.cos(u), f = Math.sin(u), y = (e.x - o.x) / 2, g = (e.y - o.y) / 2, w = l * y + f * g, d = -f * y + l * g, x = w ** 2 / c ** 2 + d ** 2 / h ** 2;
+  if (x > 1) {
+    const $ = Math.sqrt(x);
+    c *= $, h *= $;
+  }
+  const M = c ** 2 * d ** 2 + h ** 2 * w ** 2, E = Math.max(0, c ** 2 * h ** 2 - M), C = (n === s ? -1 : 1) * Math.sqrt(M === 0 ? 0 : E / M), T = C * c * d / h, I = C * -h * w / c, pt = {
+    x: l * T - f * I + (e.x + o.x) / 2,
+    y: f * T + l * I + (e.y + o.y) / 2
+  }, H = { x: (w - T) / c, y: (d - I) / h }, V = { x: (-w - T) / c, y: (-d - I) / h }, Xt = Math.atan2(H.y, H.x);
+  let O = Math.atan2(H.x * V.y - H.y * V.x, H.x * V.x + H.y * V.y);
+  !s && O > 0 && (O -= 2 * Math.PI), s && O < 0 && (O += 2 * Math.PI);
+  const gt = Math.max(4, Math.ceil(Math.abs(O) * Math.max(c, h) / 16));
+  for (let $ = 1; $ <= gt; $ += 1) {
+    const bt = Xt + O * $ / gt, wt = c * Math.cos(bt), yt = h * Math.sin(bt);
+    a({
+      x: pt.x + l * wt - f * yt,
+      y: pt.y + f * wt + l * yt
+    });
+  }
+}
+function bi(e) {
+  const t = Tt.get(e);
+  if (t) return t;
+  const i = K[e] ?? K["fa-star"], r = pi(i.path);
+  return Tt.set(e, r), r;
+}
+function wi(e, t, i) {
+  let r = 0;
+  for (const n of e.subpaths)
+    if (!(n.length < 3))
+      for (let s = 0; s < n.length; s += 1) {
+        const o = n[s], a = n[(s + 1) % n.length];
+        o.y <= i ? a.y > i && (a.x - o.x) * (i - o.y) - (t - o.x) * (a.y - o.y) > 0 && (r += 1) : a.y <= i && (a.x - o.x) * (i - o.y) - (t - o.x) * (a.y - o.y) < 0 && (r -= 1);
+      }
+  return r !== 0;
+}
+function yi(e, t) {
+  const i = K[e.iconId] ?? K["fa-star"], r = bi(e.iconId), n = Math.max(1, Math.trunc(e.width)), s = Math.max(1, Math.trunc(e.height)), o = Math.min(n / i.width, s / i.height);
+  if (!(o > 0)) return;
+  const a = i.width * o, c = i.height * o, h = Math.trunc(e.x) + (n - a) / 2, u = Math.trunc(e.y) + (s - c) / 2, l = Math.max(0, Math.floor(h)), f = Math.min(t[0]?.length ?? 0, Math.ceil(h + a)), y = Math.max(0, Math.floor(u)), g = Math.min(t.length, Math.ceil(u + c)), w = z * z;
+  for (let d = y; d < g; d += 1)
+    for (let x = l; x < f; x += 1) {
+      let M = 0;
+      for (let E = 0; E < z; E += 1)
+        for (let C = 0; C < z; C += 1) {
+          const T = (x + (C + 0.5) / z - h) / o, I = (d + (E + 0.5) / z - u) / o;
+          wi(r, T, I) && (M += 1);
+        }
+      M * 2 >= w && k(t, x, d);
+    }
+}
+function vi(e, t, i, r, n, s, o) {
+  if (e.strokes) {
+    xi(e, t, i, r, n, s, o);
+    return;
+  }
+  const a = e.rows ?? [];
+  for (let c = 0; c < a.length; c += 1)
+    for (let h = 0; h < a[c].length; h += 1)
+      if (a[c][h] === "1")
+        for (let u = 0; u < r; u += 1)
+          for (let l = 0; l < r; l += 1)
+            k(n, t + h * r + l, i + c * r + u, o), s && k(n, t + h * r + l + 1, i + c * r + u, o);
+}
+const q = 4;
+function xi(e, t, i, r, n, s, o) {
+  const a = (e.strokeWidth ?? 0.85) + (s ? 0.25 : 0), h = a / 2 * r + 1, u = Math.max(o.x, Math.floor(t - h)), l = Math.min(o.x + o.width, Math.ceil(t + e.width * r + h)), f = Math.max(o.y, Math.floor(i - h)), y = Math.min(o.y + o.height, Math.ceil(i + 7 * r + h)), g = q * q;
+  for (let w = f; w < y; w += 1)
+    for (let d = u; d < l; d += 1) {
+      let x = 0;
+      for (let M = 0; M < q; M += 1)
+        for (let E = 0; E < q; E += 1) {
+          const C = (d + (E + 0.5) / q - t) / r, T = (w + (M + 0.5) / q - i) / r;
+          Mi(e, C, T, a) && (x += 1);
+        }
+      x * 2 >= g && k(n, d, w, o);
+    }
+}
+function Mi(e, t, i, r) {
+  const n = r / 2;
+  for (const s of e.strokes ?? [])
+    for (let o = 1; o < s.length; o += 1)
+      if (Di(t, i, s[o - 1], s[o]) <= n) return !0;
+  for (const [s, o] of e.dots ?? [])
+    if (Math.hypot(t - s, i - o) <= n * 1.1) return !0;
+  return !1;
+}
+function Di(e, t, i, r) {
+  const n = r[0] - i[0], s = r[1] - i[1], o = n * n + s * s;
+  if (o === 0) return Math.hypot(e - i[0], t - i[1]);
+  const a = Math.max(
+    0,
+    Math.min(1, ((e - i[0]) * n + (t - i[1]) * s) / o)
+  );
+  return Math.hypot(
+    e - (i[0] + a * n),
+    t - (i[1] + a * s)
+  );
+}
+function Ei(e, t, i, r) {
+  const n = Math.max(0, Math.trunc(e.insetDots)), s = Math.max(1, Math.trunc(e.thicknessDots)), o = e.style ?? "solid", a = o === "double" ? [0, Math.max(2, s + 1)] : Array.from({ length: s }, (c, h) => h);
+  for (const c of a) {
+    const h = n + c, u = n + c, l = t - n - c - 1, f = i - n - c - 1;
+    if (h > l || u > f) continue;
+    const y = (g) => o === "dashed" ? g % 8 < 4 : o === "dotted" ? g % 3 === 0 : !0;
+    for (let g = h; g <= l; g += 1) {
+      const w = g - h;
+      o === "rounded" && (g === h || g === l) || y(w) && (k(r, g, u), k(r, g, f));
+    }
+    for (let g = u; g <= f; g += 1) {
+      const w = g - u;
+      o === "rounded" && (g === u || g === f) || y(w) && (k(r, h, g), k(r, l, g));
+    }
+    if (o === "rounded")
+      for (const [g, w] of [[h + 1, u], [l - 1, u], [h + 1, f], [l - 1, f], [h, u + 1], [l, u + 1], [h, f - 1], [l, f - 1]])
+        k(r, g, w);
+  }
+}
+function Pi(e, t, i) {
+  const r = Math.max(1, Math.trunc(e.fontSizeDots ?? 1)), n = Math.max(8, Math.trunc(e.itemHeightDots ?? 10 * r));
+  e.items.length * n > e.height && i.push({
+    severity: "warning",
+    code: "render.checklist-overflow",
+    message: "Checklist rows extend beyond the node bounds.",
+    nodeId: e.id
+  }), e.items.forEach((o, a) => {
+    const c = Math.trunc(e.y) + a * n;
+    c >= e.y + e.height || tt(
+      {
+        id: `${e.id}-${a}`,
+        text: `${o.checked ? "[X]" : "[ ]"} ${o.text}`,
+        x: e.x,
+        y: c,
+        width: e.width,
+        height: Math.min(n, e.y + e.height - c),
+        fontId: e.fontId,
+        fontSizeDots: e.fontSizeDots,
+        lineHeightDots: 8 * r
+      },
+      t,
+      i,
+      e.id
+    );
+  });
+}
+function Si(e, t, i) {
+  tt(
+    {
+      id: e.id,
+      text: e.text,
+      x: e.x,
+      y: e.y,
+      width: e.width,
+      height: e.height,
+      fontId: e.fontId,
+      fontSizeDots: e.fontSizeDots,
+      align: e.align
+    },
+    t,
+    i,
+    e.id
+  );
+}
+function Ai(e, t, i, r) {
+  const n = Math.trunc(e.image.width), s = Math.trunc(e.image.height), o = zi(e.image.dataBase64);
+  if (n <= 0 || s <= 0)
+    throw new Error("Image dimensions must be greater than zero");
+  if (o.length !== n * s * 4)
+    throw new Error(
+      `RGBA image data must contain ${n * s * 4} bytes, got ${o.length}`
+    );
+  const a = Math.max(1, Math.trunc(e.width)), c = Math.max(1, Math.trunc(e.height));
+  if (a > i.widthDots)
+    throw new Error(`Image width ${a} exceeds profile width ${i.widthDots}`);
+  if (c > t.length)
+    throw new Error(`Image height ${c} exceeds page height ${t.length}`);
+  const h = de(
+    {
+      data: new Uint8ClampedArray(o),
+      width: n,
+      height: s
+    },
+    a,
+    c
+  ), u = $t(
+    h,
+    {
+      dither: r.dither ?? "steinberg",
+      brightness: r.brightness ?? 128,
+      flip: "none",
+      rotate: 0
+    },
+    a
+  );
+  for (let l = 0; l < u.binaryRows.length; l += 1)
+    for (let f = 0; f < a; f += 1)
+      u.binaryRows[l][f] && k(t, Math.trunc(e.x) + f, Math.trunc(e.y) + l);
+}
+function ki(e, t) {
+  const i = Math.max(1, Math.trunc(e.thicknessDots ?? 1));
+  for (let r = 0; r < i; r += 1)
+    for (let n = 0; n < Math.trunc(e.width); n += 1)
+      k(t, Math.trunc(e.x) + n, Math.trunc(e.y) + r);
+}
+function Ri(e, t, i) {
+  const r = Ti(e.format, e.value), n = e.showText && e.height >= 18 ? 10 : 0, s = e.height - n;
+  jt(r, e.x, e.y, e.width, s, t), n > 0 && tt(
+    {
+      id: `${e.id}-text`,
+      text: e.value,
+      x: e.x,
+      y: e.y + s + 1,
+      width: e.width,
+      height: 8,
+      align: "center",
+      fontSizeDots: 1
+    },
+    t,
+    i,
+    e.id
+  );
+}
+function Ci(e, t) {
+  if (e.errorCorrection && e.errorCorrection !== "low")
+    throw new Error("QR renderer v1 supports low error correction only");
+  const i = Ni(new TextEncoder().encode(e.value)), r = i.length + 8, n = [];
+  for (let s = 0; s < r; s += 1)
+    for (let o = 0; o < r; o += 1)
+      n.push(
+        s >= 4 && s < r - 4 && o >= 4 && o < r - 4 && i[s - 4][o - 4]
+      );
+  jt(n, e.x, e.y, e.width, e.height, t, r);
+}
+function jt(e, t, i, r, n, s, o) {
+  const a = Math.max(1, Math.trunc(r)), c = Math.max(1, Math.trunc(n)), h = o ?? e.length, u = o ?? 1, l = Math.trunc(t), f = Math.trunc(i);
+  for (let y = 0; y < c; y += 1) {
+    const g = o ? Math.min(u - 1, Math.floor(y * u / c)) : 0;
+    for (let w = 0; w < a; w += 1) {
+      const d = Math.min(h - 1, Math.floor(w * h / a)), x = o ? g * h + d : d;
+      e[x] && k(s, l + w, f + y);
+    }
+  }
+}
+function Ti(e, t) {
+  switch (e) {
+    case "code128":
+      return _i(t);
+    case "ean13":
+      return Lt(t);
+    case "upca":
+      return Lt(`0${t}`);
+  }
+}
+function _i(e) {
+  const t = [104];
+  for (const r of e) {
+    const n = r.charCodeAt(0);
+    if (n < 32 || n > 126)
+      throw new Error("Code128 renderer supports printable ASCII only");
+    t.push(n - 32);
+  }
+  const i = t.reduce((r, n, s) => r + n * (s === 0 ? 1 : s), 0) % 103;
+  return t.push(i, 106), t.flatMap((r) => Ii(ni[r]));
+}
+function Lt(e) {
+  let t = e;
+  if (!/^\d+$/.test(t))
+    throw new Error("EAN/UPC barcode values must contain digits only");
+  if (t.length === 12 && (t += String(Ht(t))), t.length !== 13 || Ht(t.slice(0, 12)) !== Number(t[12]))
+    throw new Error("EAN-13 barcode must contain 12 digits plus a valid checksum");
+  const i = [..."0000000000", ..."101"], r = ci[Number(t[0])];
+  for (let n = 1; n <= 6; n += 1) {
+    const s = Number(t[n]);
+    i.push(...r[n - 1] === "L" ? si[s] : oi[s]);
+  }
+  i.push(..."01010");
+  for (let n = 7; n < 13; n += 1)
+    i.push(...ai[Number(t[n])]);
+  return i.push(..."101", ..."0000000000"), i.map((n) => n === "1");
+}
+function Ht(e) {
+  let t = 0;
+  for (let i = 0; i < e.length; i += 1) {
+    const r = Number(e[i]);
+    t += i % 2 === 0 ? r : r * 3;
+  }
+  return (10 - t % 10) % 10;
+}
+function Ii(e) {
+  const t = [];
+  let i = !0;
+  for (const r of e) {
+    for (let n = 0; n < Number(r); n += 1)
+      t.push(i);
+    i = !i;
+  }
+  return t;
+}
+function Ni(e) {
+  if (e.length > 17)
+    throw new Error("QR renderer v1 supports at most 17 UTF-8 bytes");
+  const t = Li(e), i = Array.from(
+    { length: S },
+    () => new Array(S).fill(null)
+  ), r = Array.from(
+    { length: S },
+    () => new Array(S).fill(!1)
+  ), n = (u, l, f) => {
+    u >= 0 && u < S && l >= 0 && l < S && (i[u][l] = f, r[u][l] = !0);
+  }, s = (u, l) => {
+    for (let f = -1; f <= 7; f += 1)
+      for (let y = -1; y <= 7; y += 1) {
+        const g = f >= 0 && f <= 6 && y >= 0 && y <= 6 && (f === 0 || f === 6 || y === 0 || y === 6 || f >= 2 && f <= 4 && y >= 2 && y <= 4);
+        n(u + f, l + y, g);
+      }
+  };
+  s(0, 0), s(0, S - 7), s(S - 7, 0);
+  for (let u = 8; u < S - 8; u += 1)
+    r[6][u] || n(6, u, u % 2 === 0), r[u][6] || n(u, 6, u % 2 === 0);
+  n(S - 8, 8, !0);
+  const o = $i(1, 0);
+  for (let u = 0; u < 15; u += 1) {
+    const l = (o >>> u & 1) !== 0;
+    u < 6 ? n(u, 8, l) : u < 8 ? n(u + 1, 8, l) : (u < 9, n(8, 15 - u, l)), u < 8 ? n(8, S - 1 - u, l) : n(8, S - 15 + u, l);
+  }
+  const a = [];
+  for (const u of t)
+    for (let l = 7; l >= 0; l -= 1)
+      a.push((u >>> l & 1) !== 0);
+  let c = 0, h = !0;
+  for (let u = S - 1; u >= 1; u -= 2) {
+    u === 6 && (u -= 1);
+    for (let l = 0; l < S; l += 1) {
+      const f = h ? S - 1 - l : l;
+      for (let y = u; y >= u - 1; y -= 1) {
+        if (r[f][y])
+          continue;
+        const g = a[c] ?? !1;
+        c += 1;
+        const w = g !== ((f + y) % 2 === 0);
+        i[f][y] = w;
+      }
+    }
+    h = !h;
+  }
+  return i.map((u) => u.map((l) => l ?? !1));
+}
+function Li(e) {
+  const t = [];
+  ct(t, 4, 4), ct(t, e.length, 8);
+  for (const s of e)
+    ct(t, s, 8);
+  for (let s = 0; s < Math.min(4, Rt * 8 - t.length); s += 1)
+    t.push(!1);
+  for (; t.length % 8 !== 0; )
+    t.push(!1);
+  const i = [];
+  for (let s = 0; s < t.length; s += 8)
+    i.push(Hi(t.slice(s, s + 8)));
+  const r = [236, 17];
+  let n = 0;
+  for (; i.length < Rt; )
+    i.push(r[n % 2]), n += 1;
+  return [...i, ...Oi(i)];
+}
+function ct(e, t, i) {
+  for (let r = i - 1; r >= 0; r -= 1)
+    e.push((t >>> r & 1) !== 0);
+}
+function Hi(e) {
+  return e.reduce((t, i) => t << 1 | (i ? 1 : 0), 0);
+}
+function Oi(e) {
+  const t = new Uint16Array(512), i = new Int16Array(256);
+  let r = 1;
+  for (let a = 0; a < 255; a += 1)
+    t[a] = r, i[r] = a, r <<= 1, (r & 256) !== 0 && (r ^= 285);
+  for (let a = 255; a < t.length; a += 1)
+    t[a] = t[a - 255];
+  const n = (a, c) => a === 0 || c === 0 ? 0 : t[i[a] + i[c]];
+  let s = [1];
+  for (let a = 0; a < at; a += 1) {
+    const c = new Array(s.length + 1).fill(0);
+    for (let h = 0; h < s.length; h += 1)
+      c[h] ^= s[h], c[h + 1] ^= n(s[h], t[a]);
+    s = c;
+  }
+  const o = new Array(at).fill(0);
+  for (const a of e) {
+    const c = a ^ o[0];
+    o.shift(), o.push(0);
+    for (let h = 0; h < at; h += 1)
+      o[h] ^= n(s[h + 1], c);
+  }
+  return o;
+}
+function $i(e, t) {
+  const i = e << 3 | t;
+  let r = i << 10;
+  for (let n = 14; n >= 10; n -= 1)
+    (r >>> n & 1) !== 0 && (r ^= 1335 << n - 10);
+  return (i << 10 | r) ^ 21522;
+}
+function k(e, t, i, r) {
+  const n = Math.trunc(t), s = Math.trunc(i);
+  r && (n < r.x || s < r.y || n >= r.x + r.width || s >= r.y + r.height) || s >= 0 && s < e.length && n >= 0 && n < e[s].length && (e[s][n] = !0);
+}
+function zi(e) {
+  const t = e.replace(/\s/g, "");
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(t) || t.length % 4 === 1)
+    throw new Error("Invalid base64 image data");
+  const i = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", r = [];
+  for (let n = 0; n < t.length; n += 4) {
+    const s = i.indexOf(t[n]), o = i.indexOf(t[n + 1]), a = t[n + 2] === "=" ? 0 : i.indexOf(t[n + 2]), c = t[n + 3] === "=" ? 0 : i.indexOf(t[n + 3]);
+    if (s < 0 || o < 0 || a < 0 || c < 0)
+      throw new Error("Invalid base64 image data");
+    const h = s << 18 | o << 12 | a << 6 | c;
+    r.push(h >>> 16 & 255), t[n + 2] !== "=" && r.push(h >>> 8 & 255), t[n + 3] !== "=" && r.push(h & 255);
+  }
+  return new Uint8Array(r);
+}
 export {
-  d as Command,
-  S as MIN_DATA_BYTES,
-  W as MXW01Printer,
-  et as NodeBluetoothAdapter,
-  y as PRINTER_WIDTH,
-  m as PRINTER_WIDTH_BYTES,
-  Z as ThermalPrinterClient,
-  tt as WebBluetoothAdapter,
-  x as encode1bppRow,
-  B as prepareImageDataBuffer,
-  K as processImageForPrinter
+  Jt as CallbackByteTransport,
+  _ as Command,
+  Ue as DEFAULT_LAYOUT_BOTTOM_PADDING,
+  ot as DOCUMENT_RENDERER_VERSION,
+  K as FONT_AWESOME_ICON_PATHS,
+  vt as FrameDecoder,
+  Fe as MAX_LAYOUT_PAGE_HEIGHT,
+  Ui as MIN_DATA_BYTES,
+  Kt as MXW01Printer,
+  we as MXW01_MEDIA_PROFILES,
+  R as MXW01_PRINTER_PROFILE,
+  er as NodeBluetoothAdapter,
+  Bi as PRINTER_WIDTH,
+  Fi as PRINTER_WIDTH_BYTES,
+  Ke as PRINT_BATCH_SCHEMA,
+  ti as PRINT_BATCH_VERSION,
+  ve as PRINT_DOCUMENT_SCHEMA,
+  xe as PRINT_DOCUMENT_VERSION,
+  Ze as PRINT_TEMPLATE_SCHEMA,
+  Je as PRINT_TEMPLATE_VERSION,
+  N as PROTOCOL,
+  be as PrintJob,
+  D as PrinterError,
+  ji as ThermalPrinterClient,
+  J as VECTOR_TEXT_GLYPHS,
+  tr as WebBluetoothAdapter,
+  Y as asPrinterError,
+  Qi as batchValues,
+  Gi as encode1bppRow,
+  ye as findMediaProfile,
+  Te as fingerprintPrintDocument,
+  ri as formatSequenceValue,
+  Ft as layoutPrintDocument,
+  X as makeCommand,
+  Ki as makeFortuneNode,
+  Xi as mediaProfileToDocumentMedia,
+  dt as packMonoRaster,
+  Ot as parseFrame,
+  xt as parseNotification,
+  Vi as prepareImageDataBuffer,
+  $t as processImageForPrinter,
+  ir as renderPrintDocument,
+  Bt as requiredTextHeight,
+  Yi as resolveTemplateDocument,
+  le as rgbaBytesToGray,
+  ei as templateTokens,
+  Wi as templateValues,
+  qi as unpackMonoRaster,
+  Ji as validatePrintBatchJob,
+  qt as validatePrintDocument,
+  Zi as validatePrintTemplate
 };
 //# sourceMappingURL=index.js.map

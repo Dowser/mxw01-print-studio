@@ -1,0 +1,141 @@
+{
+  "schema": "mxw01.rendering-conformance",
+  "version": 1,
+  "rendererVersion": "bitmap-5x7-qr1-v6",
+  "notes": [
+    "Coordinates and dimensions are integer dots.",
+    "Text defaults to the bundled vector glyphs; this text vector explicitly selects the legacy deterministic 5x7 bitmap font.",
+    "Images are RGBA8888 and use threshold dithering in these vectors.",
+    "QR is version 1-L with a four-module quiet zone.",
+    "The expected hashes cover the complete packed wire buffer, not only content rows."
+  ],
+  "vectors": [
+    {
+      "name": "text-A",
+      "profile": {
+        "id": "test-16",
+        "widthDots": 16,
+        "bytesPerRow": 2,
+        "minimumRows": 1,
+        "bitOrder": "lsb-first",
+        "blackIsOne": true
+      },
+      "document": {
+        "schema": "mxw01.print-document",
+        "version": 1,
+        "page": {
+          "widthDots": 16,
+          "heightDots": 8,
+          "margins": { "top": 0, "right": 0, "bottom": 0, "left": 0 }
+        },
+        "nodes": [
+          { "id": "title", "kind": "text", "text": "A", "x": 0, "y": 0, "width": 5, "height": 7, "fontId": "mxw-5x7" }
+        ]
+      },
+      "raster": {
+        "contentHeightRows": 8,
+        "wireHeightRows": 8,
+        "dataHex": "0e 00 11 00 11 00 1f 00 11 00 11 00 11 00 00 00",
+        "sha256": "84d960501eaac710255d61fa4fc56cb74404311142c92b7e91b8c825b3278b79"
+      }
+    },
+    {
+      "name": "image-2x2",
+      "profile": {
+        "id": "test-8",
+        "widthDots": 8,
+        "bytesPerRow": 1,
+        "minimumRows": 1,
+        "bitOrder": "lsb-first",
+        "blackIsOne": true
+      },
+      "document": {
+        "schema": "mxw01.print-document",
+        "version": 1,
+        "page": {
+          "widthDots": 8,
+          "heightDots": 2,
+          "margins": { "top": 0, "right": 0, "bottom": 0, "left": 0 }
+        },
+        "nodes": [
+          {
+            "id": "image",
+            "kind": "image",
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2,
+            "image": {
+              "width": 2,
+              "height": 2,
+              "dataBase64": "AAAA////////////AAAA/w=="
+            }
+          }
+        ]
+      },
+      "raster": {
+        "contentHeightRows": 2,
+        "wireHeightRows": 2,
+        "dataHex": "01 02",
+        "sha256": "a12871fee210fb8619291eaea194581cbd2531e4b23759d225f6806923f63222"
+      }
+    },
+    {
+      "name": "barcode-code128-A",
+      "profile": {
+        "id": "test-64",
+        "widthDots": 64,
+        "bytesPerRow": 8,
+        "minimumRows": 1,
+        "bitOrder": "lsb-first",
+        "blackIsOne": true
+      },
+      "document": {
+        "schema": "mxw01.print-document",
+        "version": 1,
+        "page": {
+          "widthDots": 64,
+          "heightDots": 10,
+          "margins": { "top": 0, "right": 0, "bottom": 0, "left": 0 }
+        },
+        "nodes": [
+          { "id": "barcode", "kind": "barcode", "format": "code128", "value": "A", "x": 0, "y": 0, "width": 64, "height": 10 }
+        ]
+      },
+      "raster": {
+        "contentHeightRows": 10,
+        "wireHeightRows": 10,
+        "firstRowHex": "27 02 09 87 a0 c3 e1 cb",
+        "sha256": "984c278d9d9dba1ec28c386abcc48152ea14bcfbbe271a931deff3471e0dbab7"
+      }
+    },
+    {
+      "name": "qr-version-1-L-A",
+      "profile": {
+        "id": "test-32",
+        "widthDots": 32,
+        "bytesPerRow": 4,
+        "minimumRows": 1,
+        "bitOrder": "lsb-first",
+        "blackIsOne": true
+      },
+      "document": {
+        "schema": "mxw01.print-document",
+        "version": 1,
+        "page": {
+          "widthDots": 32,
+          "heightDots": 29,
+          "margins": { "top": 0, "right": 0, "bottom": 0, "left": 0 }
+        },
+        "nodes": [
+          { "id": "qr", "kind": "qr", "value": "A", "x": 0, "y": 0, "width": 29, "height": 29 }
+        ]
+      },
+      "raster": {
+        "contentHeightRows": 29,
+        "wireHeightRows": 29,
+        "sha256": "d93ea53dd3938419f9e395b71995c71c6bd9a9d665d3c324adfc50f3299bcb0c"
+      }
+    }
+  ]
+}

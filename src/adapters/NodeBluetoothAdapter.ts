@@ -8,6 +8,7 @@ import type {
   BluetoothDevice as PrinterBluetoothDevice,
   BluetoothConnection,
   BluetoothServiceInfo,
+  BluetoothNotificationEvent,
 } from "../core/types";
 
 /**
@@ -21,8 +22,8 @@ class NobleCharacteristicWrapper extends BaseCharacteristicWrapper {
     this.characteristic = characteristic;
   }
 
-  async writeValueWithoutResponse(data: BufferSource): Promise<void> {
-    const buffer = Buffer.from(data as ArrayBuffer);
+  async writeValueWithoutResponse(data: Uint8Array): Promise<void> {
+    const buffer = Buffer.from(data);
     await this.characteristic.writeAsync(buffer, true);
   }
 
@@ -34,19 +35,10 @@ class NobleCharacteristicWrapper extends BaseCharacteristicWrapper {
     await this.characteristic.unsubscribeAsync();
   }
 
-  addEventListener(event: string, callback: (event: any) => void): void {
+  addEventListener(event: string, callback: (event: BluetoothNotificationEvent) => void): void {
     if (event === "characteristicvaluechanged") {
       const dataListener = (data: Buffer) => {
-        callback({
-          target: {
-            value: {
-              buffer: data.buffer.slice(
-                data.byteOffset,
-                data.byteOffset + data.byteLength
-              ),
-            },
-          },
-        });
+        callback({ value: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) });
       };
 
       this.dataListeners.set(callback, dataListener);
@@ -54,7 +46,7 @@ class NobleCharacteristicWrapper extends BaseCharacteristicWrapper {
     }
   }
 
-  removeEventListener(event: string, callback: (event: any) => void): void {
+  removeEventListener(event: string, callback: (event: BluetoothNotificationEvent) => void): void {
     if (event === "characteristicvaluechanged") {
       const dataListener = this.dataListeners.get(callback);
       if (dataListener) {
@@ -82,7 +74,10 @@ class NobleCharacteristicWrapper extends BaseCharacteristicWrapper {
  */
 export class NodeBluetoothAdapter implements BluetoothAdapter {
   private noble: any = null;
-  private peripheral: any = null;
+  private readonly nobleModule: Promise<any | null>;
+  private readonly peripherals = new Map<string, any>();
+  private activePeripheral: any = null;
+  private scanPromise: Promise<PrinterBluetoothDevice> | null = null;
   private characteristics: {
     control?: any;
     notify?: any;
@@ -90,10 +85,32 @@ export class NodeBluetoothAdapter implements BluetoothAdapter {
   } = {};
 
   constructor() {
+    // `require()` is not available in an ESM package. Keep the optional
+    // dependency out of the static bundle and resolve it only when the Node
+    // adapter is used.
+    this.nobleModule = this.loadNobleModule();
+  }
+
+  private async loadNobleModule(): Promise<any | null> {
     try {
-      // Dynamic import to avoid issues if noble is not installed
-      this.noble = require("@stoprocent/noble");
-    } catch (error) {
+      const dynamicImport = new Function(
+        "specifier",
+        "return import(specifier);"
+      ) as (specifier: string) => Promise<any>;
+      const loaded = await dynamicImport("@stoprocent/noble");
+      return loaded.default ?? loaded;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  private async ensureNoble(): Promise<void> {
+    if (this.noble) {
+      return;
+    }
+
+    this.noble = await this.nobleModule;
+    if (!this.noble) {
       throw new Error(
         "Noble is not installed. Please run: npm install @stoprocent/noble"
       );
@@ -105,7 +122,9 @@ export class NodeBluetoothAdapter implements BluetoothAdapter {
    * The powered on state is checked during requestDevice()
    */
   isAvailable(): boolean {
-    return this.noble !== null;
+    // Loading is asynchronous in ESM; requestDevice() performs the definitive
+    // availability check before scanning.
+    return true;
   }
 
   /**
@@ -113,47 +132,93 @@ export class NodeBluetoothAdapter implements BluetoothAdapter {
    * Automatically finds devices with MXW01 printer service UUID
    */
   async requestDevice(): Promise<PrinterBluetoothDevice> {
-    return new Promise((resolve, reject) => {
+    await this.ensureNoble();
+
+    if (this.scanPromise) {
+      return this.scanPromise;
+    }
+
+    const operation = new Promise<PrinterBluetoothDevice>((resolve, reject) => {
+      let settled = false;
+      let stateListener: ((state: string) => void) | null = null;
       const timeout = setTimeout(() => {
-        this.noble.stopScanning();
-        reject(new Error("Device scan timeout (30s)"));
+        fail(new Error("Device scan timeout (30s)"));
       }, 30000);
 
-      const onDiscover = (peripheral: any) => {
-        // If Noble discovers it with our filter, it's our printer
-        this.noble.stopScanning();
+      const cleanup = (stopScanning: boolean): void => {
         clearTimeout(timeout);
-        this.peripheral = peripheral;
         this.noble.removeListener("discover", onDiscover);
+        if (stateListener) {
+          this.noble.removeListener("stateChange", stateListener);
+          stateListener = null;
+        }
+        if (stopScanning) {
+          try {
+            this.noble.stopScanning();
+          } catch (_error) {
+            // Noble may already have stopped scanning after a disconnect.
+          }
+        }
+      };
 
+      const fail = (error: Error): void => {
+        if (settled) return;
+        settled = true;
+        cleanup(true);
+        reject(error);
+      };
+
+      const onDiscover = (peripheral: any): void => {
+        if (settled) return;
+        const id = peripheral.id || peripheral.uuid;
+        if (!id) return;
+        settled = true;
+        this.peripherals.set(id, peripheral);
+        cleanup(true);
         resolve({
-          id: peripheral.id || peripheral.uuid,
-          name: peripheral.advertisement.localName || "MXW01 Printer",
+          id,
+          name: peripheral.advertisement?.localName || "MXW01 Printer",
         });
       };
 
       this.noble.on("discover", onDiscover);
 
-      const startScanning = () => {
+      const startScanning = (): void => {
         console.log("Scanning for MXW01 printer...");
-        this.noble.startScanning(
-          [BLUETOOTH_UUIDS.PRINTER_SERVICE, BLUETOOTH_UUIDS.PRINTER_SERVICE_ALT],
-          false
-        );
+        try {
+          this.noble.startScanning(
+            [BLUETOOTH_UUIDS.PRINTER_SERVICE, BLUETOOTH_UUIDS.PRINTER_SERVICE_ALT],
+            false
+          );
+        } catch (error) {
+          fail(error instanceof Error ? error : new Error(String(error)));
+        }
       };
 
       if (this.noble.state === "poweredOn") {
         startScanning();
       } else {
-        const onStateChange = (state: string) => {
+        stateListener = (state: string): void => {
           if (state === "poweredOn") {
-            this.noble.removeListener("stateChange", onStateChange);
+            if (stateListener) {
+              this.noble.removeListener("stateChange", stateListener);
+              stateListener = null;
+            }
             startScanning();
           }
         };
-        this.noble.on("stateChange", onStateChange);
+        this.noble.on("stateChange", stateListener);
       }
     });
+
+    this.scanPromise = operation;
+    try {
+      return await operation;
+    } finally {
+      if (this.scanPromise === operation) {
+        this.scanPromise = null;
+      }
+    }
   }
 
   /**
@@ -162,18 +227,21 @@ export class NodeBluetoothAdapter implements BluetoothAdapter {
   async connect(
     device: PrinterBluetoothDevice
   ): Promise<BluetoothConnection & BluetoothServiceInfo> {
-    if (!this.peripheral) {
-      throw new Error("No peripheral found. Call requestDevice() first.");
+    await this.ensureNoble();
+
+    const peripheral = this.peripherals.get(device.id);
+    if (!peripheral) {
+      throw new Error("No matching peripheral found. Call requestDevice() first.");
     }
 
     try {
       // Connect to peripheral
-      await this.peripheral.connectAsync();
+      await peripheral.connectAsync();
       console.log("Connected to peripheral");
 
       // Discover all services and characteristics (Noble works better without filters)
       const { characteristics } =
-        await this.peripheral.discoverAllServicesAndCharacteristicsAsync();
+        await peripheral.discoverAllServicesAndCharacteristicsAsync();
 
       console.log(`Found ${characteristics.length} characteristics`);
 
@@ -205,7 +273,7 @@ export class NodeBluetoothAdapter implements BluetoothAdapter {
         );
       }
 
-      const peripheral = this.peripheral;
+      this.activePeripheral = peripheral;
 
       return {
         device,
@@ -214,8 +282,22 @@ export class NodeBluetoothAdapter implements BluetoothAdapter {
             await peripheral.disconnectAsync();
             console.log("Disconnected from peripheral");
           }
-          this.peripheral = null;
+          if (this.activePeripheral === peripheral) {
+            this.activePeripheral = null;
+          }
+          this.peripherals.delete(device.id);
           this.characteristics = {};
+        },
+        onDisconnect: (listener) => {
+          const onDisconnect = (error?: Error) => {
+            if (this.activePeripheral === peripheral) {
+              this.activePeripheral = null;
+            }
+            this.peripherals.delete(device.id);
+            listener(error);
+          };
+          peripheral.on("disconnect", onDisconnect);
+          return () => peripheral.removeListener("disconnect", onDisconnect);
         },
         controlCharacteristic: new NobleCharacteristicWrapper(
           this.characteristics.control
@@ -229,13 +311,14 @@ export class NodeBluetoothAdapter implements BluetoothAdapter {
       };
     } catch (error) {
       // Ensure we disconnect on error
-      if (this.peripheral && this.peripheral.state === "connected") {
+      if (peripheral && peripheral.state === "connected") {
         try {
-          await this.peripheral.disconnectAsync();
+          await peripheral.disconnectAsync();
         } catch (disconnectError) {
           console.error("Error disconnecting:", disconnectError);
         }
       }
+      this.peripherals.delete(device.id);
       throw new Error(
         `Failed to connect to device: ${(error as Error).message}`
       );
