@@ -6,7 +6,9 @@ import { spawnSync } from "node:child_process";
 
 const baseUrl = process.env.MXW01_WEB_URL ?? "http://127.0.0.1:4173";
 const projectRoot = new URL("..", import.meta.url).pathname.replace(/\/$/u, "");
-const taskTemp = "/Volumes/External2TB/AppData/codex/tmp/mxw01";
+const taskTemp = process.env.MXW01_WEB_TMP
+  ?? process.env.RUNNER_TEMP
+  ?? join(projectRoot, "output", ".playwright-tmp");
 const artifactDir = process.env.PLAYWRIGHT_ARTIFACT_DIR ?? join(projectRoot, "output", "playwright", `web-e2e-${new Date().toISOString().replace(/[:.]/gu, "-")}`);
 mkdirSync(taskTemp, { recursive: true });
 mkdirSync(artifactDir, { recursive: true });
